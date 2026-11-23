@@ -1,0 +1,4 @@
+python-telegram-bot[job-queue]==22.8
+psycopg[binary]==3.3.9
+psycopg-pool==3.3.3
+tzdata==2026.6

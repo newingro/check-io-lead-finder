@@ -1,0 +1,99 @@
+# CHECK-iO Lead Finder
+
+Bot Telegram che trova strutture in affitto breve, le analizza e prepara per il team di CHECK-iO
+messaggi personalizzati da approvare e inviare a mano.
+
+Il progetto procede per fasi. **Questa è la fase 1 (fondamenta):** database, bot Telegram che
+risponde, collegamento delle persone del team con un codice, impostazioni lette dal database,
+pausa e modalità. Ricerca, analisi e messaggi arrivano nelle fasi successive.
+
+## Comandi del bot
+
+| Comando | Chi | Cosa fa |
+|---|---|---|
+| `/start`, `/aiuto` | tutti | benvenuto ed elenco dei comandi |
+| `/collega CODICE` | chiunque abbia ricevuto un codice | collega il proprio Telegram |
+| `/io` | team | nome, ruolo e turni |
+| `/stato` | team | giri attivi o in pausa, modalità, zone |
+| `/codice Nome` | titolare | crea il codice per collegare un commerciale (valido 15 minuti, una volta sola) |
+| `/codice Nome titolare` | titolare | come sopra, con ruolo di titolare |
+| `/team` | titolare | le persone del team e il loro stato |
+| `/pausa`, `/riprendi` | titolare | ferma o riavvia i giri |
+| `/modalita telefonate` · `messaggi` · `misto` | titolare | cambia la modalità |
+| `/impostazioni` | titolare | le impostazioni attuali |
+
+Chi non fa parte del team riceve solo un messaggio di cortesia. Il bot parte **in pausa**.
+
+## Come funziona il primo collegamento
+
+1. Sul server si imposta la variabile `OWNER_SETUP_CODE`: un codice segreto inventato da te (almeno 12 caratteri).
+2. Apri il bot su Telegram e scrivi `/collega` seguito da quel codice: diventi **titolare**.
+   Funziona una sola volta; dopo, quel codice non serve più.
+3. Per collegare un commerciale scrivi `/codice Matteo`: il bot ti dà un codice da inoltrargli.
+   Matteo apre il bot e scrive `/collega CODICE`.
+
+I codici sono validi 15 minuti, si usano una sola volta e nel database resta solo la loro impronta
+(nessuno può leggerli). Dopo 5 tentativi sbagliati in un'ora il collegamento si blocca.
+
+## Impostazioni
+
+Stanno nella tabella `finder_settings` (zone, tipi di struttura, ricerche, punteggio minimo,
+schede per giro, orari, follow-up, tetti di spesa…) e `finder_state` (pausa e modalità).
+Si cambiano dal gestionale (quando sarà pronto) o dall'editor tabelle di Supabase: il bot le
+rilegge ogni 5 minuti e avvisa su Telegram cosa è cambiato. Non serve ripubblicare il bot.
+
+## Messa online
+
+### 1. Database (Supabase)
+
+1. Crea il progetto Supabase (regione Europa).
+2. Apri **SQL Editor**, incolla il contenuto di `supabase/migrations/20261123090000_fondamenta.sql` ed esegui.
+3. **Project Settings → Database → Connection string**: copia la stringa in modalità
+   **Session pooler** e sostituisci `[YOUR-PASSWORD]` con la password del database.
+   Questo valore va in `DATABASE_URL` su Railway (mai in chat).
+
+Tutte le tabelle hanno la sicurezza per righe attiva: le chiavi pubbliche di Supabase non vedono nulla.
+
+### 2. Server (Railway)
+
+1. Su railway.app: **New Project → Deploy from GitHub repo** e scegli questo repository.
+2. Nel servizio, scheda **Variables**, aggiungi:
+   - `TELEGRAM_BOT_TOKEN`: il token di @BotFather
+   - `DATABASE_URL`: la stringa del punto 1
+   - `OWNER_SETUP_CODE`: il tuo codice segreto di primo avvio
+3. Railway installa e avvia il bot da solo (`python -m app.main`) e lo riavvia se si ferma.
+   Deve esserci **una sola copia** del bot in esecuzione.
+
+Variabili facoltative: `TIMEZONE` (predefinito `Europe/Rome`), `SETTINGS_POLL_SECONDS` (300),
+`LINK_CODE_TTL_MINUTES` (15), `LOG_LEVEL` (INFO).
+
+## Prove
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
+
+Le prove usano dati finti e nessuna rete. Le prove sul database vero si attivano impostando
+`TEST_DATABASE_ADMIN_URL` (un Postgres locale: il database di prova viene creato e cancellato da solo).
+
+## Struttura
+
+```
+app/
+  main.py          avvio del bot
+  config.py        variabili del server
+  bot/             comandi Telegram e testi
+  db/              database: Postgres (Supabase) e versione in memoria per le prove
+  domain/          codici, turni, impostazioni in italiano
+  services/        collegamento, pausa e modalità, controllo delle impostazioni
+supabase/migrations/   tabelle e sicurezza
+tests/                 prove automatiche
+```
+
+## Sicurezza
+
+- Token e connessioni solo nelle variabili del server, mai nel codice o in chat.
+- I log non contengono il token del bot né dati personali.
+- Comandi del titolare protetti; il collegamento si fa solo in chat privata.
