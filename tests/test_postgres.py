@@ -25,6 +25,8 @@ from app.services.settings_watch import SettingsWatcher
 
 ADMIN_URL = os.environ.get("TEST_DATABASE_ADMIN_URL")
 MIGRATIONS = sorted((Path(__file__).parent.parent / "supabase" / "migrations").glob("*.sql"))
+SUPABASE_STUB = Path(__file__).parent / "sql" / "supabase_stub.sql"
+RLS_TEST = Path(__file__).parent.parent / "supabase" / "tests" / "rls_test.sql"
 
 pytestmark = pytest.mark.skipif(not ADMIN_URL, reason="TEST_DATABASE_ADMIN_URL non impostata")
 
@@ -37,6 +39,7 @@ async def repo():
     url = ADMIN_URL.rsplit("/", 1)[0] + f"/{name}"
     try:
         with psycopg.connect(url, autocommit=True) as conn:
+            conn.execute(SUPABASE_STUB.read_text())
             for migration in MIGRATIONS:
                 conn.execute(migration.read_text())
         pool = create_pool(url)
@@ -129,3 +132,29 @@ async def test_sicurezza_per_righe_attiva_su_tutte_le_tabelle(repo):
             "select tablename from pg_tables where schemaname = 'public' and not rowsecurity"
         ).fetchall()
     assert rows == []
+
+
+async def test_regole_di_accesso_del_gestionale(repo):
+    """Esegue supabase/tests/rls_test.sql: ogni riga deve risultare superata."""
+    _, url = repo
+    with psycopg.connect(url, autocommit=True) as conn:
+        cur = conn.cursor()
+        cur.execute(RLS_TEST.read_text())
+        results = None
+        while True:
+            if cur.description is not None:
+                results = cur.fetchall()
+            if not cur.nextset():
+                break
+    assert results and len(results) == 20
+    failed = [name for name, ok in results if not ok]
+    assert failed == []
+
+
+async def test_il_bot_aggiorna_lo_stato_senza_account_web(repo):
+    """Le modifiche del bot (senza utente web) non vengono attribuite al gestionale."""
+    repository, url = repo
+    state = await repository.update_state(paused=False, mode=None, updated_by="Bot Test")
+    assert state.updated_by == "Bot Test"
+    with psycopg.connect(url) as conn:
+        assert conn.execute("select count(*) from audit_log where source = 'gestionale'").fetchone()[0] == 0
