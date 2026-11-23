@@ -146,7 +146,7 @@ async def test_regole_di_accesso_del_gestionale(repo):
                 results = cur.fetchall()
             if not cur.nextset():
                 break
-    assert results and len(results) == 20
+    assert results and len(results) == 22
     failed = [name for name, ok in results if not ok]
     assert failed == []
 

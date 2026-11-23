@@ -16,7 +16,7 @@ insert into public.properties (id, name, assigned_to) values
   ('20000000-0000-4000-8000-000000000002', 'Struttura del Titolare', '10000000-0000-4000-8000-000000000001');
 
 create temp table esiti (prova text, ok boolean) on commit drop;
-grant all on esiti to authenticated, anon;
+grant all on esiti to authenticated, anon, service_role;
 
 -- Titolare con verifica in due passaggi
 set local role authenticated;
@@ -83,6 +83,26 @@ do $$ begin
 exception when check_violation then
   insert into esiti values ('zona con raggio assurdo rifiutata', true);
 end $$;
+
+-- Chiave segreta del server del gestionale (service_role): solo ciò che serve
+set local role service_role;
+do $$ begin
+  update public.lead_finders set email = 'titolare@prova.test' where id = '10000000-0000-4000-8000-000000000001';
+  insert into public.audit_log (actor_label, source, action) values ('Prova', 'gestionale', 'prova');
+  insert into public.link_codes (code_hash, lead_finder_id, expires_at)
+    values ('prova-hash-server', '10000000-0000-4000-8000-000000000002', now() + interval '15 minutes');
+  update public.link_codes set used_at = now() where code_hash = 'prova-hash-server';
+  insert into esiti values ('server collega account e crea codici', true);
+exception when insufficient_privilege then
+  insert into esiti values ('server collega account e crea codici', false);
+end $$;
+do $$ begin
+  perform 1 from public.finder_settings;
+  insert into esiti values ('server non legge le impostazioni', false);
+exception when insufficient_privilege then
+  insert into esiti values ('server non legge le impostazioni', true);
+end $$;
+reset role;
 
 select prova, ok from esiti order by ok, prova;
 rollback;
