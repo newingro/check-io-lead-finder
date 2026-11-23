@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
+from psycopg_pool import PoolTimeout
 from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeDefault, Update
-from telegram.error import TelegramError
+from telegram.error import InvalidToken, TelegramError
 from telegram.ext import Application, ApplicationBuilder
 
 from app.bot import handlers
-from app.config import Config
+from app.config import Config, ConfigError
 from app.db.postgres import PostgresRepository, create_pool
 from app.domain.models import LeadFinder
 from app.services.control import ControlService
@@ -38,6 +39,10 @@ PUBLIC_COMMANDS = [
 ]
 
 
+class StartupError(RuntimeError):
+    """Problema di configurazione che impedisce l'avvio."""
+
+
 def setup_logging(level: str) -> None:
     logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=level)
     # httpx registra gli indirizzi delle richieste, che contengono il token del bot: mai nei log.
@@ -59,7 +64,13 @@ def build_application(config: Config) -> Application:
     pool = create_pool(config.database_url)
 
     async def on_startup(app: Application) -> None:
-        await pool.open(wait=True, timeout=30)
+        try:
+            await pool.open(wait=True, timeout=30)
+        except PoolTimeout as exc:
+            raise StartupError(
+                "Impossibile collegarsi al database. Controlla DATABASE_URL: deve essere la stringa "
+                "'Session pooler' di Supabase, con la password del database al posto di [YOUR-PASSWORD]."
+            ) from exc
         repo = PostgresRepository(pool)
         watcher = SettingsWatcher(repo)
         await watcher.load()
@@ -95,10 +106,23 @@ def build_application(config: Config) -> Application:
 
 
 def main() -> None:
-    config = Config.from_env()
+    try:
+        config = Config.from_env()
+    except ConfigError as exc:
+        setup_logging("INFO")
+        log.error("Configurazione non valida: %s (Railway → Variables)", exc)
+        raise SystemExit(1) from None
     setup_logging(config.log_level)
-    app = build_application(config)
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    log.info("Avvio del bot…")
+    try:
+        app = build_application(config)
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+    except InvalidToken:
+        log.error("TELEGRAM_BOT_TOKEN non valido: copia di nuovo il token da @BotFather (Railway → Variables).")
+        raise SystemExit(1) from None
+    except StartupError as exc:
+        log.error("%s", exc)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":
