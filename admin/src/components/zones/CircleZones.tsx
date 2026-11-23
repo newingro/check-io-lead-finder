@@ -1,11 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState, useTransition } from "react";
+import { useState } from "react";
 import { MapPin, Plus, Search, Trash2 } from "lucide-react";
-import { saveZones } from "@/app/(app)/actions";
 import { Badge, Button, cn, Notice } from "@/components/ui";
-import type { Zone } from "@/lib/zones";
+import type { CircleZone as Zone } from "@/lib/zones";
 
 const RadarMap = dynamic(() => import("./RadarMap"), {
   ssr: false,
@@ -19,27 +18,24 @@ interface Place {
   lng: number;
 }
 
-export function ZoneManager({ initialZones, canEdit }: { initialZones: Zone[]; canEdit: boolean }) {
-  const [zones, setZones] = useState<Zone[]>(initialZones);
-  const [saved, setSaved] = useState<string>(JSON.stringify(initialZones));
-  const [selected, setSelected] = useState<number | null>(initialZones.length ? 0 : null);
+/** Zone «comune e raggio» sulla mappa OpenStreetMap. Il salvataggio lo fa ZonesEditor. */
+export function CircleZones({ zones, onChange, canEdit }: { zones: Zone[]; onChange: (zones: Zone[]) => void; canEdit: boolean }) {
+  const [selected, setSelected] = useState<number | null>(zones.length ? 0 : null);
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<Place[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  const [pending, startTransition] = useTransition();
-  const dirty = useMemo(() => JSON.stringify(zones) !== saved, [zones, saved]);
   const current = selected !== null ? zones[selected] : null;
 
   function update(index: number, patch: Partial<Zone>) {
-    setZones((prev) => prev.map((zone, i) => (i === index ? { ...zone, ...patch } : zone)));
+    onChange(zones.map((zone, i) => (i === index ? { ...zone, ...patch } : zone)));
     setMessage(null);
   }
 
   function addZone(place?: Place) {
     const base = place ?? (current ? { nome: "", lat: current.lat, lng: current.lng } : { nome: "", lat: 44.1425, lng: 10.6633 });
-    const zone: Zone = { nome: place?.nome ?? "", lat: base.lat, lng: base.lng, raggio_km: 10, attiva: true };
-    setZones((prev) => [...prev, zone]);
+    const zone: Zone = { tipo: "cerchio", nome: place?.nome ?? "", lat: base.lat, lng: base.lng, raggio_km: 10, attiva: true };
+    onChange([...zones, zone]);
     setSelected(zones.length);
     setPlaces(null);
     setQuery("");
@@ -47,7 +43,7 @@ export function ZoneManager({ initialZones, canEdit }: { initialZones: Zone[]; c
   }
 
   function removeZone(index: number) {
-    setZones((prev) => prev.filter((_, i) => i !== index));
+    onChange(zones.filter((_, i) => i !== index));
     setSelected(zones.length > 1 ? 0 : null);
     setMessage(null);
   }
@@ -67,22 +63,6 @@ export function ZoneManager({ initialZones, canEdit }: { initialZones: Zone[]; c
     } finally {
       setSearching(false);
     }
-  }
-
-  function save() {
-    if (zones.some((z) => !z.nome.trim())) {
-      setMessage({ tone: "error", text: "Ogni zona deve avere un nome." });
-      return;
-    }
-    startTransition(async () => {
-      const result = await saveZones(zones.map((z) => ({ ...z, nome: z.nome.trim() })));
-      if (result.ok) {
-        setSaved(JSON.stringify(zones));
-        setMessage({ tone: "ok", text: "Zone salvate. Il bot le userà dal prossimo giro e lo comunicherà su Telegram." });
-      } else {
-        setMessage({ tone: "error", text: result.error });
-      }
-    });
   }
 
   return (
@@ -137,14 +117,14 @@ export function ZoneManager({ initialZones, canEdit }: { initialZones: Zone[]; c
 
         <div className="card p-4">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="font-semibold text-navy-900">Zone ({zones.length})</h2>
+            <h2 className="font-semibold text-navy-900">Comuni e raggi ({zones.length})</h2>
             {canEdit ? (
               <Button type="button" variant="ghost" onClick={() => addZone()} className="min-h-9 px-2">
                 <Plus aria-hidden="true" className="size-4" /> Nuova
               </Button>
             ) : null}
           </div>
-          {zones.length === 0 ? <p className="mt-3 text-sm text-slate">Nessuna zona impostata.</p> : null}
+          {zones.length === 0 ? <p className="mt-3 text-sm text-slate">Nessun comune con raggio. Puoi usare solo le province, oppure aggiungere qui un luogo preciso (es. Abetone, 15 km).</p> : null}
           <ul className="mt-3 space-y-1.5">
             {zones.map((zone, index) => (
               <li key={index}>
@@ -223,13 +203,6 @@ export function ZoneManager({ initialZones, canEdit }: { initialZones: Zone[]; c
         ) : null}
 
         {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
-        {canEdit ? (
-          <Button type="button" onClick={save} disabled={!dirty || pending} className="w-full">
-            {pending ? "Salvataggio…" : dirty ? "Salva le zone" : "Nessuna modifica da salvare"}
-          </Button>
-        ) : (
-          <Notice tone="info">Le zone le imposta il titolare. Tu puoi consultarle.</Notice>
-        )}
       </div>
     </div>
   );

@@ -25,4 +25,5 @@ export const ACTION_LABELS: Record<string, string> = {
   pausa: "ha messo in pausa i giri",
   ripresa: "ha riavviato i giri",
   modalita: "ha cambiato modalità",
+  pulizia_memoria: "ha cancellato i dati scaduti (restano le impronte)",
 };

@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Gauge, Radar, Settings, User, Users } from "lucide-react";
+import { Gauge, History, Radar, Settings, User, Users } from "lucide-react";
 import { cn } from "./ui";
 
 const LINKS = [
   { href: "/", label: "Panoramica", icon: Gauge },
   { href: "/zone", label: "Zone", icon: Radar },
+  { href: "/memoria", label: "Memoria", icon: History },
   { href: "/impostazioni", label: "Impostazioni", icon: Settings },
   { href: "/team", label: "Team", icon: Users },
   { href: "/profilo", label: "Profilo", icon: User },

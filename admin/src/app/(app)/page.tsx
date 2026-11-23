@@ -5,6 +5,7 @@ import { Badge, PageHeader } from "@/components/ui";
 import { loadRecentActivity, loadSettings, loadState, loadTeam } from "@/lib/data";
 import { ACTION_LABELS, formatDateTime } from "@/lib/format";
 import { requireMember } from "@/lib/member";
+import { isProvinceZone, zoneDetail } from "@/lib/zones";
 
 export const metadata: Metadata = { title: "Panoramica" };
 
@@ -53,9 +54,9 @@ export default async function OverviewPage() {
           ) : (
             <ul className="mt-4 divide-y divide-line">
               {activeZones.map((zone) => (
-                <li key={zone.nome} className="flex items-center justify-between py-2.5 text-sm">
+                <li key={isProvinceZone(zone) ? zone.codice : zone.nome} className="flex items-center justify-between py-2.5 text-sm">
                   <span className="font-medium text-navy-900">{zone.nome}</span>
-                  <Badge tone="ok">raggio {zone.raggio_km} km</Badge>
+                  <Badge tone="ok">{zoneDetail(zone)}</Badge>
                 </li>
               ))}
             </ul>

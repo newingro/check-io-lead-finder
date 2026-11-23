@@ -65,3 +65,17 @@ def test_configurazione():
     with pytest.raises(ConfigError):
         Config.from_env({**env, "SETTINGS_POLL_SECONDS": "5"})
     assert Decimal("30") == default_settings().monthly_ai_budget_eur
+
+
+def test_zone_in_telegram_province_e_cerchi():
+    from app.domain.settings_view import format_settings
+
+    settings = replace(
+        default_settings(),
+        zones=[
+            {"tipo": "provincia", "codice": "047", "nome": "Pistoia", "attiva": True},
+            {"nome": "Abetone", "lat": 44.14, "lng": 10.66, "raggio_km": 15, "attiva": True},
+            {"tipo": "provincia", "codice": "048", "nome": "Firenze", "attiva": False},
+        ],
+    )
+    assert "Zone: Pistoia (provincia), Abetone (15 km)" in format_settings(settings)

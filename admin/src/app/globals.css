@@ -96,3 +96,47 @@
   font-family: var(--font-sans);
   background: #dfe7ea;
 }
+
+/* Mappa dell'Italia: radar che gira e onde sulle zone attive. */
+@keyframes radar-giro {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes radar-onda {
+  from {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  to {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+.radar-giro {
+  transform-box: view-box;
+  animation: radar-giro 6s linear infinite;
+}
+.radar-onda {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: radar-onda 2.6s ease-out infinite;
+}
+.mappa-area {
+  cursor: pointer;
+  transition: fill 0.15s ease;
+}
+.mappa-area:focus {
+  outline: none;
+}
+.mappa-area:focus-visible {
+  stroke: var(--color-navy-900);
+  stroke-width: 2.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .radar-giro,
+  .radar-onda {
+    animation: none;
+    display: none;
+  }
+}

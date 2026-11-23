@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 import { useEffect, useMemo } from "react";
 import { Circle, CircleMarker, MapContainer, SVGOverlay, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import type { LatLngBoundsExpression } from "leaflet";
-import { zoneBounds, type Zone } from "@/lib/zones";
+import { zoneBounds, type CircleZone as Zone } from "@/lib/zones";
 
 const DEFAULT_CENTER: [number, number] = [44.1425, 10.6633]; // Abetone
 

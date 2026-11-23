@@ -14,7 +14,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 from app.db.repository import Repository
 from app.domain.models import MODES, ROLE_OWNER, ROLE_SALES, LeadFinder
-from app.domain.settings_view import format_settings, format_state
+from app.domain.settings_view import format_settings, format_state, zone_label
 from app.domain.shifts import format_shifts
 from app.services.control import ControlService
 from app.services.linking import LinkingService, LinkOutcome
@@ -170,7 +170,7 @@ async def stato(update: Update, context: ContextTypes.DEFAULT_TYPE, member: Lead
     repo: Repository = deps(context)["repo"]
     state = await repo.get_state()
     settings = await repo.get_settings()
-    zones = [z.get("nome", "?") for z in settings.zones if z.get("attiva", True)]
+    zones = [zone_label(z) for z in settings.zones if z.get("attiva", True)]
     lines = [
         "📊 Stato del Lead Finder",
         format_state(state),

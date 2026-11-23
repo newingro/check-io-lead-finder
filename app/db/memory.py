@@ -8,7 +8,9 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from app.domain.dedupe import Candidate, normalize_email, normalize_phone
 from app.domain.models import ROLE_OWNER, LeadFinder, Settings, State
+from app.domain.radar import CellMemory
 
 from .repository import AlreadyLinkedError, CodeAlreadyUsedError, LinkTarget
 
@@ -41,6 +43,12 @@ class InMemoryRepository:
         self.settings: Settings = default_settings()
         self.state: State = State(paused=True, mode="misto", version=1)
         self.audit: list[dict[str, Any]] = []
+        self.province: dict[str, list[str]] = {}
+        self.cell_memory: dict[tuple[str, str], CellMemory] = {}
+        self.cell_totals: dict[tuple[str, str], tuple[int, int]] = {}
+        self.fingerprints: dict[tuple[str, str], str | None] = {}
+        self.properties: dict[str, dict[str, Any]] = {}
+        self.opt_out: list[tuple[str | None, str | None]] = []
 
     # Persone
     async def get_member_by_telegram(self, telegram_user_id: int) -> LeadFinder | None:
@@ -143,3 +151,68 @@ class InMemoryRepository:
         self.audit.append(
             {"actor_id": actor_id, "actor_label": actor_label, "source": source, "action": action, "details": details}
         )
+
+    # Radar
+    async def province_cells(self, codes: list[str]) -> dict[str, list[str]]:
+        return {code: list(self.province[code]) for code in codes if code in self.province}
+
+    async def province_for_cells(self, cells: list[str]) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for code in sorted(self.province):
+            for cell in self.province[code]:
+                if cell in cells:
+                    result.setdefault(cell, code)
+        return result
+
+    async def get_cell_memory(self, cells: list[str], queries: list[str]) -> dict[tuple[str, str], CellMemory]:
+        return {key: mem for key, mem in self.cell_memory.items() if key[0] in cells and key[1] in queries}
+
+    async def save_cell_memory(self, memory: CellMemory, results: int, new: int) -> None:
+        key = (memory.cell, memory.query)
+        total_results, total_new = self.cell_totals.get(key, (0, 0))
+        self.cell_totals[key] = (total_results + results, total_new + new)
+        self.cell_memory[key] = memory
+
+    # Memoria delle strutture
+    async def find_fingerprints(self, prints: list[tuple[str, str]]) -> dict[tuple[str, str], str | None]:
+        return {p: self.fingerprints[p] for p in prints if p in self.fingerprints}
+
+    async def touch_property(self, property_id: str | None, prints: list[tuple[str, str]]) -> None:
+        for p in prints:
+            self.fingerprints.setdefault(p, property_id)
+        if property_id and property_id in self.properties:
+            self.properties[property_id]["times_seen"] += 1
+
+    async def is_opted_out(self, phone: str | None, email: str | None) -> bool:
+        return any((phone and phone == p) or (email and email == e) for p, e in self.opt_out)
+
+    async def insert_property(
+        self,
+        candidate: Candidate,
+        prints: list[tuple[str, str]],
+        *,
+        cell: str,
+        provincia: str | None,
+        zone: str,
+        query: str,
+    ) -> str | None:
+        if any(p in self.fingerprints for p in prints):
+            return None
+        property_id = str(uuid.uuid4())
+        self.properties[property_id] = {
+            "candidate": candidate,
+            "phone_normalized": normalize_phone(candidate.phone),
+            "email_normalized": normalize_email(candidate.email),
+            "cell": cell,
+            "provincia": provincia,
+            "zone": zone,
+            "query": query,
+            "status": "nuovo",
+            "times_seen": 1,
+        }
+        for p in prints:
+            self.fingerprints[p] = property_id
+        return property_id
+
+    async def purge_expired(self) -> int:
+        return 0

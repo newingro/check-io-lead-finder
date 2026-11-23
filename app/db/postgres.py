@@ -5,11 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from psycopg import errors
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
+from app.domain.dedupe import Candidate, normalize_email, normalize_phone
 from app.domain.models import LeadFinder, Settings, State
+from app.domain.radar import CellMemory
 
 from .repository import AlreadyLinkedError, CodeAlreadyUsedError, LinkTarget
 
@@ -196,3 +199,156 @@ class PostgresRepository:
                 "insert into audit_log (actor_id, actor_label, source, action, details) values (%s, %s, %s, %s, %s)",
                 (actor_id, actor_label, source, action, Jsonb(details)),
             )
+
+    # ── Radar: province e memoria delle ricerche ─────────────
+    async def province_cells(self, codes: list[str]) -> dict[str, list[str]]:
+        if not codes:
+            return {}
+        async with self.pool.connection() as conn:
+            cur = await conn.execute("select codice, celle from province where codice = any(%s)", (codes,))
+            rows = await cur.fetchall()
+        return {row["codice"]: list(row["celle"]) for row in rows}
+
+    async def province_for_cells(self, cells: list[str]) -> dict[str, str]:
+        if not cells:
+            return {}
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "select c as cell, min(codice) as codice from province, unnest(celle) as c "
+                "where c = any(%s) group by c",
+                (cells,),
+            )
+            rows = await cur.fetchall()
+        return {row["cell"]: row["codice"] for row in rows}
+
+    async def get_cell_memory(self, cells: list[str], queries: list[str]) -> dict[tuple[str, str], CellMemory]:
+        if not cells or not queries:
+            return {}
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "select cell, query, searches, last_searched_at, empty_streak, rest_until, last_results, last_new "
+                "from search_cells where cell = any(%s) and query = any(%s)",
+                (cells, queries),
+            )
+            rows = await cur.fetchall()
+        return {(row["cell"], row["query"]): CellMemory(**row) for row in rows}
+
+    async def save_cell_memory(self, memory: CellMemory, results: int, new: int) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "insert into search_cells (cell, query, searches, results_total, new_total, last_results, last_new, "
+                "  empty_streak, first_searched_at, last_searched_at, rest_until) "
+                "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "on conflict (cell, query) do update set searches = excluded.searches, "
+                "  results_total = search_cells.results_total + excluded.results_total, "
+                "  new_total = search_cells.new_total + excluded.new_total, "
+                "  last_results = excluded.last_results, last_new = excluded.last_new, "
+                "  empty_streak = excluded.empty_streak, last_searched_at = excluded.last_searched_at, "
+                "  rest_until = excluded.rest_until",
+                (
+                    memory.cell, memory.query, memory.searches, results, new, memory.last_results, memory.last_new,
+                    memory.empty_streak, memory.last_searched_at, memory.last_searched_at, memory.rest_until,
+                ),
+            )
+
+    # ── Memoria delle strutture ──────────────────────────────
+    async def find_fingerprints(self, prints: list[tuple[str, str]]) -> dict[tuple[str, str], str | None]:
+        if not prints:
+            return {}
+        kinds, hashes = [k for k, _ in prints], [h for _, h in prints]
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "select f.kind, f.hash, f.property_id::text as property_id from property_fingerprints f "
+                "join unnest(%s::text[], %s::text[]) as u(kind, hash) using (kind, hash)",
+                (kinds, hashes),
+            )
+            rows = await cur.fetchall()
+        return {(row["kind"], row["hash"]): row["property_id"] for row in rows}
+
+    async def touch_property(self, property_id: str | None, prints: list[tuple[str, str]]) -> None:
+        kinds, hashes = [k for k, _ in prints], [h for _, h in prints]
+        async with self.pool.connection() as conn, conn.transaction():
+            await conn.execute(
+                "update property_fingerprints f set last_seen_at = now(), times_seen = f.times_seen + 1 "
+                "from unnest(%s::text[], %s::text[]) as u(kind, hash) where f.kind = u.kind and f.hash = u.hash",
+                (kinds, hashes),
+            )
+            # Impronte nuove della stessa struttura (es. ora ha anche il telefono): si aggiungono.
+            await conn.execute(
+                "insert into property_fingerprints (kind, hash, property_id) "
+                "select kind, hash, %s from unnest(%s::text[], %s::text[]) as u(kind, hash) "
+                "on conflict (kind, hash) do nothing",
+                (property_id, kinds, hashes),
+            )
+            if property_id:
+                await conn.execute(
+                    "update properties set times_seen = times_seen + 1, last_seen_at = now() where id = %s",
+                    (property_id,),
+                )
+
+    async def is_opted_out(self, phone: str | None, email: str | None) -> bool:
+        if not phone and not email:
+            return False
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "select exists (select 1 from opt_out where (%s::text is not null and phone_normalized = %s) "
+                "or (%s::text is not null and email_normalized = %s)) as found",
+                (phone, phone, email, email),
+            )
+            row = await cur.fetchone()
+        return bool(row["found"])
+
+    async def insert_property(
+        self,
+        candidate: Candidate,
+        prints: list[tuple[str, str]],
+        *,
+        cell: str,
+        provincia: str | None,
+        zone: str,
+        query: str,
+    ) -> str | None:
+        kinds, hashes = [k for k, _ in prints], [h for _, h in prints]
+        try:
+            async with self.pool.connection() as conn, conn.transaction():
+                cur = await conn.execute(
+                    "insert into properties (name, property_type, address, zone, latitude, longitude, cin, "
+                    "  google_place_id, listing_urls, website, phone, phone_normalized, email, email_normalized, "
+                    "  ratings, source, cell, provincia, search_query) "
+                    "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'google_places', %s, %s, %s) "
+                    "returning id::text as id",
+                    (
+                        candidate.name, candidate.property_type, candidate.address, zone, candidate.latitude,
+                        candidate.longitude, candidate.cin, candidate.google_place_id, Jsonb(candidate.listing_urls),
+                        candidate.website, candidate.phone, normalize_phone(candidate.phone), candidate.email,
+                        normalize_email(candidate.email), Jsonb(candidate.ratings), cell, provincia, query,
+                    ),
+                )
+                property_id = (await cur.fetchone())["id"]
+                cur = await conn.execute(
+                    "insert into property_fingerprints (kind, hash, property_id) "
+                    "select kind, hash, %s from unnest(%s::text[], %s::text[]) as u(kind, hash) "
+                    "on conflict (kind, hash) do nothing returning kind",
+                    (property_id, kinds, hashes),
+                )
+                if len(await cur.fetchall()) < len(prints):
+                    # Qualcun altro l'ha salvata nel frattempo: è già in memoria.
+                    raise _AlreadyKnown
+                await conn.execute(
+                    "insert into property_events (property_id, actor_label, source, event_type, to_status, details) "
+                    "values (%s, 'bot', 'bot', 'trovata', 'nuovo', %s)",
+                    (property_id, Jsonb({"zona": zone, "cella": cell, "ricerca": query})),
+                )
+        except (_AlreadyKnown, errors.UniqueViolation):
+            return None
+        return property_id
+
+    async def purge_expired(self) -> int:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute("select public.pulisci_memoria() as removed")
+            row = await cur.fetchone()
+        return int(row["removed"])
+
+
+class _AlreadyKnown(Exception):
+    """Annulla il salvataggio: la struttura è già in memoria."""

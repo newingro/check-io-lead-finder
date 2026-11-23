@@ -78,6 +78,30 @@ pytest
 Le prove usano dati finti e nessuna rete. Le prove sul database vero si attivano impostando
 `TEST_DATABASE_ADMIN_URL` (un Postgres locale: il database di prova viene creato e cancellato da solo).
 
+## Radar e memoria storica
+
+Le zone possono essere **intere province** (scelte sulla mappa dell'Italia nel gestionale) oppure
+**un comune con il suo raggio**. Il radar divide ogni zona in celle di circa 5 km × 5 km e cerca
+una cella alla volta (`app/domain/radar.py`):
+
+- prima le celle mai cercate, poi quelle cercate da più tempo, alternando le zone;
+- una cella che per 2 ricerche di fila non dà strutture nuove riposa 30 giorni (poi 90);
+- ogni ricerca resta in `search_cells` (quando, quanti risultati, quante nuove).
+
+**Una struttura già trovata non torna mai come nuova** (`app/domain/dedupe.py`): di ogni struttura
+si salvano le impronte cifrate (SHA-256) di scheda Google, CIN, telefono, email e nome+indirizzo;
+basta un'impronta in comune per riconoscerla, anche se arriva da un altro annuncio. Le impronte
+restano anche quando i dati vengono cancellati per il periodo di conservazione
+(`pulisci_memoria()`, i clienti non si cancellano). Chi ha chiesto di non essere contattato non
+viene mai salvato né rimesso in ricerca. Solo il titolare può rimettere a mano una struttura
+nella ricerca (pagina *Memoria* del gestionale), e ogni consultazione resta nello storico.
+
+La ricerca su Google Places arriva nella fase 2 e userà `RadarService` (`app/services/radar.py`).
+
+Confini di regioni e province: ISTAT 2026, pubblicati da openpolis/geojson-italy (CC BY 4.0).
+Per aggiornarli: scarica `limits_IT_regions.geojson` e `limits_IT_provinces.geojson` in una
+cartella e lancia `python -I scripts/build_geo.py CARTELLA` (rigenera mappa, celle e migrazione).
+
 ## Gestionale web
 
 La cartella `admin/` contiene il gestionale (Next.js) pubblicato su **admin.check-io.it**:
@@ -94,6 +118,7 @@ app/
   domain/          codici, turni, impostazioni in italiano
   services/        collegamento, pausa e modalità, controllo delle impostazioni
 admin/               gestionale web (admin.check-io.it)
+scripts/build_geo.py   confini e celle del radar (si lancia a mano)
 supabase/migrations/   tabelle e sicurezza
 supabase/tests/        prove delle regole di accesso
 tests/                 prove automatiche

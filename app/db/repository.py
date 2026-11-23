@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
+from app.domain.dedupe import Candidate
 from app.domain.models import LeadFinder, Settings, State
+from app.domain.radar import CellMemory
 
 
 class AlreadyLinkedError(Exception):
@@ -57,3 +59,25 @@ class Repository(Protocol):
     async def add_audit(
         self, actor_id: str | None, actor_label: str, source: str, action: str, details: dict[str, Any]
     ) -> None: ...
+
+    # Radar: province e memoria delle ricerche
+    async def province_cells(self, codes: list[str]) -> dict[str, list[str]]: ...
+    async def province_for_cells(self, cells: list[str]) -> dict[str, str]: ...
+    async def get_cell_memory(self, cells: list[str], queries: list[str]) -> dict[tuple[str, str], CellMemory]: ...
+    async def save_cell_memory(self, memory: CellMemory, results: int, new: int) -> None: ...
+
+    # Memoria delle strutture
+    async def find_fingerprints(self, prints: list[tuple[str, str]]) -> dict[tuple[str, str], str | None]: ...
+    async def touch_property(self, property_id: str | None, prints: list[tuple[str, str]]) -> None: ...
+    async def is_opted_out(self, phone: str | None, email: str | None) -> bool: ...
+    async def insert_property(
+        self,
+        candidate: Candidate,
+        prints: list[tuple[str, str]],
+        *,
+        cell: str,
+        provincia: str | None,
+        zone: str,
+        query: str,
+    ) -> str | None: ...
+    async def purge_expired(self) -> int: ...

@@ -8,7 +8,8 @@ import { MODES, settingsSchema, type SettingsInput } from "@/lib/settings";
 import { buildShifts, DAYS, defaultShifts } from "@/lib/shifts";
 import { AdminNotConfiguredError, createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { zonesSchema, type Zone } from "@/lib/zones";
+import type { CellaEsplorata } from "@/lib/italia";
+import { isProvinceZone, zonesProblem, zonesSchema, type Zone } from "@/lib/zones";
 
 export type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -55,13 +56,56 @@ export async function saveZones(zones: Zone[]): Promise<ActionResult> {
   if (!(await owner())) return NOT_OWNER;
   const parsed = zonesSchema.safeParse(zones);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Zone non valide." };
-  const names = parsed.data.map((z) => z.nome.toLowerCase());
-  if (new Set(names).size !== names.length) return { ok: false, error: "Ci sono due zone con lo stesso nome." };
+  const problem = zonesProblem(parsed.data);
+  if (problem) return { ok: false, error: problem };
   const supabase = await createClient();
+  const codes = parsed.data.filter(isProvinceZone).map((z) => z.codice);
+  if (codes.length) {
+    const { count } = await supabase.from("province").select("codice", { count: "exact", head: true }).in("codice", codes);
+    if (count !== codes.length) return { ok: false, error: "Una delle province non esiste." };
+  }
   const { error } = await supabase.from("finder_settings").update({ zones: parsed.data }).eq("id", 1);
   if (error) return { ok: false, error: "Zone non salvate. Riprova." };
   revalidatePath("/zone");
   revalidatePath("/");
+  return { ok: true };
+}
+
+// ── Radar e memoria ─────────────────────────────────────────
+/** Celle già esplorate in una regione, per colorarle sulla mappa (tutto il team). */
+export async function loadRegionCells(regione: string): Promise<ActionResult<{ cells: CellaEsplorata[] }>> {
+  await requireMember();
+  if (!/^\d{2}$/.test(regione)) return { ok: false, error: "Regione non valida." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("radar_celle", { p_regione: regione });
+  if (error) return { ok: false, error: "Celle non caricate." };
+  return { ok: true, cells: (data ?? []) as CellaEsplorata[] };
+}
+
+/** Registra che la persona ha aperto la scheda di una struttura. */
+export async function markViewed(propertyId: string): Promise<ActionResult> {
+  await requireMember();
+  if (!z.uuid().safeParse(propertyId).success) return { ok: false, error: "Struttura non valida." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("segna_consultata", { p_property: propertyId });
+  if (error) return { ok: false, error: "Consultazione non registrata." };
+  return { ok: true };
+}
+
+/** Il titolare rimette una struttura nella ricerca: tornerà a essere proposta come nuova. */
+export async function releaseProperty(propertyId: string, motivo: string): Promise<ActionResult> {
+  if (!(await owner())) return NOT_OWNER;
+  if (!z.uuid().safeParse(propertyId).success) return { ok: false, error: "Struttura non valida." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("rimetti_in_ricerca", { p_property: propertyId, p_motivo: motivo.trim().slice(0, 300) });
+  if (error) {
+    return {
+      ok: false,
+      error: error.code === "23514" ? "Questa struttura ha chiesto di non essere contattata: non può tornare in ricerca." : "Operazione non riuscita. Riprova.",
+    };
+  }
+  revalidatePath("/memoria");
+  revalidatePath(`/memoria/${propertyId}`);
   return { ok: true };
 }
 

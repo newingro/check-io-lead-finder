@@ -7,7 +7,8 @@ Area riservata del team, collegata allo stesso database del bot Telegram.
 | Pagina | Titolare | Commerciale |
 |---|---|---|
 | Panoramica | stato dei giri, pausa/ripresa, modalità, attività recenti | stato e zone (sola lettura) |
-| Zone | mappa con radar: cerca un comune, centro e raggio in km, attiva/disattiva | sola lettura |
+| Zone | mappa dell'Italia: regione → province da attivare, celle già esplorate, radar; scheda «Comune e raggio» con la mappa OpenStreetMap | sola lettura |
+| Memoria | strutture trovate (mai riproposte), chi le ha consultate e quando, «Rimetti in ricerca» | solo le strutture assegnate a sé |
 | Impostazioni | punteggio, giri, follow-up, tetti di spesa, conservazione dati | sola lettura |
 | Team | account, ruoli, turni, codici Telegram, password e 2FA, sospensione | il proprio profilo |
 | Profilo | cambio password | cambio password |
@@ -50,7 +51,7 @@ da Supabase (Authentication → Users → utente → Remove MFA factors).
 ```bash
 npm install
 npm run verify        # lint, tipi, test, build
-ADMIN_PREVIEW=1 npm run dev   # anteprima con dati finti su /anteprima/zone, /anteprima/team…
+ADMIN_PREVIEW=1 npm run dev   # anteprima con dati finti su /anteprima/zone, /anteprima/memoria, /anteprima/struttura, /anteprima/team…
 ```
 
 L'anteprima funziona solo in locale con `ADMIN_PREVIEW=1` e non è mai attiva in produzione.

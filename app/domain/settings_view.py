@@ -9,13 +9,19 @@ from typing import Any
 from .models import Settings, State
 
 
+def zone_label(zone: dict[str, Any]) -> str:
+    """«Pistoia (provincia)» oppure «Abetone (15 km)»."""
+    name = zone.get("nome", "?")
+    if zone.get("tipo") == "provincia":
+        return f"{name} (provincia)"
+    return f"{name} ({zone['raggio_km']} km)" if zone.get("raggio_km") else str(name)
+
+
 def _zones(value: list[dict[str, Any]]) -> str:
     active = [z for z in value if z.get("attiva", True)]
     if not active:
         return "nessuna (da impostare dal gestionale)"
-    return ", ".join(
-        f"{z.get('nome', '?')}" + (f" ({z['raggio_km']} km)" if z.get("raggio_km") else "") for z in active
-    )
+    return ", ".join(zone_label(z) for z in active)
 
 
 def _list(value: list[str]) -> str:

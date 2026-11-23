@@ -4,8 +4,21 @@ import { SettingsForm } from "@/components/forms/SettingsForm";
 import { Shell } from "@/components/Shell";
 import { TeamManager } from "@/components/team/TeamManager";
 import { Badge, PageHeader } from "@/components/ui";
-import { ZoneManager } from "@/components/zones/ZoneManager";
-import { assertPreview, previewSettings, previewTeam } from "@/lib/preview";
+import { MemoryView } from "@/components/memoria/MemoryView";
+import { PropertyView } from "@/components/memoria/PropertyView";
+import { ReleaseForm } from "@/components/memoria/ReleaseForm";
+import { ZonesEditor } from "@/components/zones/ZonesEditor";
+import {
+  assertPreview,
+  previewEvents,
+  previewMemory,
+  previewProperties,
+  previewProperty,
+  previewRadar,
+  previewSettings,
+  previewTeam,
+} from "@/lib/preview";
+import { isProvinceZone, zoneDetail } from "@/lib/zones";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +42,9 @@ export default async function PreviewPage({ params }: { params: Promise<{ pagina
             <h2 className="text-lg font-semibold text-navy-900">Zone attive</h2>
             <ul className="mt-4 divide-y divide-line">
               {previewSettings.zones.filter((z) => z.attiva).map((z) => (
-                <li key={z.nome} className="flex items-center justify-between py-2.5 text-sm">
+                <li key={isProvinceZone(z) ? z.codice : z.nome} className="flex items-center justify-between py-2.5 text-sm">
                   <span className="font-medium text-navy-900">{z.nome}</span>
-                  <Badge tone="ok">raggio {z.raggio_km} km</Badge>
+                  <Badge tone="ok">{zoneDetail(z)}</Badge>
                 </li>
               ))}
             </ul>
@@ -40,12 +53,22 @@ export default async function PreviewPage({ params }: { params: Promise<{ pagina
       </>
     );
   } else if (base === "zone") {
+    const radar = await previewRadar();
     content = (
       <>
-        <PageHeader title="Zone di ricerca" description="Le aree in cui il bot cerca strutture." />
-        <ZoneManager initialZones={previewSettings.zones} canEdit={isOwner} />
+        <PageHeader title="Zone di ricerca" description="Dove il radar del bot cerca strutture: intere province, oppure un comune con il suo raggio." />
+        <ZonesEditor initialZones={previewSettings.zones} canEdit={isOwner} province={radar.province} coverage={radar.coverage} previewCells={radar.cells} />
       </>
     );
+  } else if (base === "memoria") {
+    content = (
+      <>
+        <PageHeader title="Memoria del radar" description="Ogni struttura trovata resta qui e non viene mai riproposta come nuova." />
+        <MemoryView summary={previewMemory} rows={isOwner ? previewProperties : previewProperties.slice(0, 1)} filters={{}} provinceNames={{ "047": "Pistoia", "046": "Lucca" }} isOwner={isOwner} />
+      </>
+    );
+  } else if (base === "struttura") {
+    content = <PropertyView property={previewProperty} events={previewEvents} provinceName="Pistoia" actions={isOwner ? <ReleaseForm propertyId={previewProperty.id} /> : null} />;
   } else if (base === "impostazioni") {
     content = (
       <>
