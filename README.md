@@ -78,6 +78,11 @@ pytest
 Le prove usano dati finti e nessuna rete. Le prove sul database vero si attivano impostando
 `TEST_DATABASE_ADMIN_URL` (un Postgres locale: il database di prova viene creato e cancellato da solo).
 
+## Gestionale web
+
+La cartella `admin/` contiene il gestionale (Next.js) pubblicato su **admin.check-io.it**:
+zone con mappa e raggio, impostazioni, pausa e modalità, team e account. Istruzioni in `admin/README.md`.
+
 ## Struttura
 
 ```
@@ -88,7 +93,9 @@ app/
   db/              database: Postgres (Supabase) e versione in memoria per le prove
   domain/          codici, turni, impostazioni in italiano
   services/        collegamento, pausa e modalità, controllo delle impostazioni
+admin/               gestionale web (admin.check-io.it)
 supabase/migrations/   tabelle e sicurezza
+supabase/tests/        prove delle regole di accesso
 tests/                 prove automatiche
 ```
 

@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy-950: #06111d;
+  --color-navy-900: #0b1a2a;
+  --color-navy-800: #0f2334;
+  --color-navy-700: #152f46;
+  --color-turq-300: #7fe3d8;
+  --color-turq-400: #35cdbd;
+  --color-turq-500: #08b7a9;
+  --color-turq-600: #03968b;
+  --color-turq-700: #007a71;
+  --color-paper: #f5f7f8;
+  --color-mist: #e8eef0;
+  --color-line: #dbe3e7;
+  --color-slate: #5b6b77;
+  --color-ink: #0b1a2a;
+  --color-danger: #b42318;
+  --color-danger-soft: #fef3f2;
+  --color-ok-soft: #ecfdf8;
+
+  --font-display: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-turq-500);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .input {
+    display: block;
+    width: 100%;
+    min-height: 2.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--color-line);
+    background: #fff;
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+    color: var(--color-ink);
+  }
+  .input:focus {
+    outline: none;
+    border-color: var(--color-turq-600);
+    box-shadow: 0 0 0 3px rgb(8 183 169 / 0.18);
+  }
+  .input:disabled {
+    background: var(--color-mist);
+    color: var(--color-slate);
+  }
+  .label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-ink);
+    margin-bottom: 0.375rem;
+  }
+  .hint {
+    font-size: 0.8125rem;
+    color: var(--color-slate);
+    margin-top: 0.25rem;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid var(--color-line);
+    border-radius: 10px;
+  }
+}
+
+/* Mappa: il radar ruota solo se l'utente non ha chiesto meno animazioni. */
+@media (prefers-reduced-motion: reduce) {
+  .radar-sweep {
+    display: none;
+  }
+}
+
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: #dfe7ea;
+}
