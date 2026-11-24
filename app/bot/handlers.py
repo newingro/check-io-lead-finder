@@ -293,7 +293,7 @@ async def plain_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await reply(update, texts.ONLY_COMMANDS if member else texts.NOT_MEMBER)
 
 
-cerca = owner_only(leads.cerca)
+cerca = members_only(leads.cerca)  # anche i commerciali
 analizza = members_only(leads.analizza)
 annulla = members_only(leads.annulla)
 verifica = owner_only(leads.verifica)

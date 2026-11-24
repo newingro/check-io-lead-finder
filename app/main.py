@@ -30,12 +30,12 @@ log = logging.getLogger("checkio")
 MEMBER_COMMANDS = [
     BotCommand("io", "Chi sono, ruolo e turni"),
     BotCommand("stato", "Giri attivi o in pausa"),
+    BotCommand("cerca", "Fai partire un giro adesso"),
     BotCommand("analizza", "Analizza un annuncio: link + testo incollato"),
     BotCommand("annulla", "Annulla una modifica in corso"),
     BotCommand("aiuto", "Elenco dei comandi"),
 ]
 OWNER_COMMANDS = MEMBER_COMMANDS + [
-    BotCommand("cerca", "Fai partire un giro adesso"),
     BotCommand("verifica", "Controlla le chiavi, senza spendere"),
     BotCommand("codice", "Collega una persona: /codice Nome"),
     BotCommand("team", "Le persone del team"),

@@ -15,6 +15,7 @@ HELP_MEMBER = (
     "Comandi disponibili:\n"
     "/io — chi sei, ruolo e turni\n"
     "/stato — giri attivi o in pausa e modalità\n"
+    "/cerca — fai partire un giro adesso (ricerca, analisi, schede a chi è di turno)\n"
     "/analizza link + testo — analizza un annuncio che hai trovato (incolla il testo: il bot non apre i portali)\n"
     "/annulla — annulla una modifica in corso\n"
     "/aiuto — questo elenco\n\n"
@@ -29,7 +30,6 @@ HELP_OWNER = (
     "/pausa · /riprendi — ferma o riavvia i giri\n"
     "/modalita telefonate | messaggi | misto — cambia la modalità\n"
     "/impostazioni — le impostazioni attuali\n"
-    "/cerca — fai partire un giro adesso (ricerca, analisi, schede)\n"
     "/verifica — controlla le chiavi di Google e Anthropic, senza spendere"
 )
 

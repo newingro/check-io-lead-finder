@@ -926,7 +926,7 @@ async def test_coda_vecchia_rispetta_il_tetto_delle_richieste_gratuite():
     first, _ = make_round(repo, places, None, price=None)  # analisi spenta: la struttura resta in coda
     await first.run("prova")
     assert [r["status"] for r in repo.properties.values()] == ["nuovo"]
-    second, notifier = make_round(repo, places, FakeAnthropic(), price=None)
+    second, _ = make_round(repo, places, FakeAnthropic(), price=None)
     report = await second.run("prova")
     # la ricerca usa l'ultima richiesta gratuita (2 su 2): niente richiesta in più per rileggere le recensioni
     assert report.google_requests == 2 and places.details_calls == 0

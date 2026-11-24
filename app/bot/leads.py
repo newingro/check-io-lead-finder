@@ -75,12 +75,30 @@ class TelegramNotifier:
 
 
 # ── Giri programmati ─────────────────────────────────────────
-async def start_round(context: ContextTypes.DEFAULT_TYPE, trigger: str) -> bool:
+async def start_round(context: ContextTypes.DEFAULT_TYPE, trigger: str, requester: LeadFinder | None = None) -> bool:
     rounds: RoundService | None = deps(context).get("rounds")
     if rounds is None or rounds.lock.locked():
         return False
-    context.application.create_task(rounds.run(trigger), name=f"giro-{trigger}")
+    job = rounds.run(trigger) if requester is None or requester.is_owner else _run_for(context, rounds, trigger, requester)
+    context.application.create_task(job, name=f"giro-{trigger}")
     return True
+
+
+async def _run_for(context: ContextTypes.DEFAULT_TYPE, rounds: RoundService, trigger: str, member: LeadFinder) -> None:
+    """Giro avviato da un commerciale: il riepilogo completo va al titolare, a lui un esito breve."""
+    report = await rounds.run(trigger)
+    if report is None or not member.telegram_chat_id:
+        return
+    text = (
+        f"✅ Giro finito: {report.new} strutture nuove, {report.analyzed} analizzate, "
+        f"{report.proposed} schede inviate a chi è di turno."
+    )
+    if report.waiting:
+        text += f" {report.waiting} aspettano qualcuno di turno."
+    try:
+        await context.bot.send_message(member.telegram_chat_id, text)
+    except TelegramError as exc:
+        log.warning("Esito del giro non consegnato a %s: %s", member.id, exc.__class__.__name__)
 
 
 async def tick(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -112,13 +130,28 @@ async def cerca(update: Update, context: ContextTypes.DEFAULT_TYPE, member: Lead
     if deps(context).get("rounds") is None:
         await update.effective_message.reply_text("I giri non sono attivi su questo server.")
         return
-    if await start_round(context, f"avviato da {member.name}"):
+    repo: Repository = deps(context)["repo"]
+    if not member.is_owner and (await repo.get_state()).paused:
+        await update.effective_message.reply_text("I giri sono in pausa: può riattivarli solo il titolare.")
+        return
+    if not await start_round(context, f"avviato da {member.name}", requester=member):
+        await update.effective_message.reply_text("C'è già un giro in corso: aspetta che finisca.")
+        return
+    if member.is_owner:
         await update.effective_message.reply_text(
-            "🛰 Giro avviato. Ti mando il riepilogo alla fine (di solito pochi minuti); "
+            "🛰 Giro avviato. Ti mando il riepilogo alla fine (circa 10-15 minuti); "
             "le schede arrivano a chi è di turno."
         )
-    else:
-        await update.effective_message.reply_text("C'è già un giro in corso: aspetta il riepilogo.")
+        return
+    await update.effective_message.reply_text(
+        "🛰 Giro avviato. Ti scrivo quando è finito (circa 10-15 minuti); "
+        "le schede arrivano a chi è di turno."
+    )
+    rounds: RoundService = deps(context)["rounds"]
+    try:
+        await rounds.notifier.notify_owners(f"🛰 {member.name} ha avviato un giro adesso.")
+    except Exception:  # noqa: BLE001 - l'avviso non deve bloccare il giro
+        log.exception("Avviso al titolare non inviato")
 
 
 # ── /analizza ────────────────────────────────────────────────

@@ -167,3 +167,68 @@ async def test_stesso_telegram_non_collegabile_a_due_persone():
     code = replies[0].split(": ", 1)[1].split("\n")[0]
     replies = await world.send(handlers.collega, user_id=MATTEO_ID, args=[code])
     assert "già collegato a un'altra persona" in replies[0]
+
+
+async def test_cerca_anche_per_i_commerciali_con_pausa_e_avviso_al_titolare():
+    from types import SimpleNamespace
+
+    from app.services.rounds import RoundReport
+
+    world = World()
+    await setup_owner(world)
+    await link_matteo(world)  # Matteo è commerciale
+    owners_alerts: list[str] = []
+    started: list[str] = []
+    locked = {"value": False}
+
+    class Notifier:
+        async def notify_owners(self, text: str) -> None:
+            owners_alerts.append(text)
+
+    class Rounds:
+        notifier = Notifier()
+        lock = SimpleNamespace(locked=lambda: locked["value"])
+
+        async def run(self, trigger: str) -> RoundReport:
+            started.append(trigger)
+            return RoundReport(trigger=trigger, started_at=datetime.now(UTC), new=3, analyzed=2, proposed=1)
+
+    created: list = []
+    world.app.bot_data["rounds"] = Rounds()
+    world.app.create_task = lambda coro, name=None: created.append(coro)
+
+    # in pausa il commerciale non può far partire giri
+    assert world.repo.state.paused is True
+    assert "in pausa" in (await world.send(handlers.cerca, user_id=MATTEO_ID))[0]
+    assert created == []
+
+    await world.send(handlers.riprendi, user_id=OWNER_ID)
+    world.bot.sent.clear()
+    replies = await world.send(handlers.cerca, user_id=MATTEO_ID)
+    assert "Giro avviato" in replies[0] and "Ti scrivo quando è finito" in replies[0]
+    assert owners_alerts == ["🛰 Matteo ha avviato un giro adesso."]
+    await created.pop()
+    assert started == ["avviato da Matteo"]
+    assert world.bot.sent == [
+        (MATTEO_ID, "✅ Giro finito: 3 strutture nuove, 2 analizzate, 1 schede inviate a chi è di turno.")
+    ]
+
+    # un giro alla volta
+    locked["value"] = True
+    assert "già un giro in corso" in (await world.send(handlers.cerca, user_id=MATTEO_ID))[0]
+    locked["value"] = False
+
+    # il titolare può avviarlo anche in pausa e riceve il riepilogo completo (dal giro stesso)
+    await world.send(handlers.pausa, user_id=OWNER_ID)
+    replies = await world.send(handlers.cerca, user_id=OWNER_ID)
+    assert "Ti mando il riepilogo" in replies[0]
+    await created.pop()
+    assert started[-1] == "avviato da Titolare" and len(owners_alerts) == 1
+
+
+async def test_aiuto_del_commerciale_mostra_cerca():
+    world = World()
+    await setup_owner(world)
+    await link_matteo(world)
+    text = (await world.send(handlers.aiuto, user_id=MATTEO_ID))[0]
+    assert "/cerca" in text and "/codice" not in text
