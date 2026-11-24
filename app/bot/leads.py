@@ -20,6 +20,7 @@ from app.domain.shifts import day_code
 from app.integrations.google_places import platform_of
 from app.integrations.website import _CIN
 from app.services.analysis import AnalysisService
+from app.services.keycheck import check_anthropic, check_google, format_statuses
 from app.services.messages import MessageService
 from app.services.rounds import RoundService
 
@@ -330,3 +331,33 @@ async def save_edit(update: Update, context: ContextTypes.DEFAULT_TYPE, member: 
 async def annulla(update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder) -> None:
     had = context.user_data.pop("edit", None)
     await update.effective_message.reply_text("Modifica annullata." if had else "Nessuna modifica in corso.")
+
+
+
+# ── Verifica delle chiavi (nessuna spesa) ────────────────────
+async def run_key_check(app: Any) -> str:
+    data = app.bot_data
+    config = data["config"]
+    statuses = [
+        await check_anthropic(data.get("anthropic"), config.claude_model),
+        await check_google(config.google_maps_api_key, data["http"]),
+    ]
+    await data["repo"].add_audit(
+        None, "bot", "bot", "verifica_chiavi",
+        {s.name: {"ok": s.ok, "esito": s.message} for s in statuses}
+        | {"prezzo_google_impostato": config.google_search_usd_per_1000 is not None},
+    )
+    return format_statuses(statuses, config.google_search_usd_per_1000 is not None)
+
+
+async def startup_key_check(app: Any) -> None:
+    try:
+        text = await run_key_check(app)
+        await TelegramNotifier(app.bot, app.bot_data["repo"]).notify_owners(text)
+    except Exception:  # noqa: BLE001 - la verifica non deve fermare il bot
+        log.exception("Verifica delle chiavi non riuscita")
+
+
+async def verifica(update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder) -> None:
+    await update.effective_message.reply_text("🔑 Verifico le chiavi (senza spendere)…")
+    await update.effective_message.reply_text(await run_key_check(context.application))

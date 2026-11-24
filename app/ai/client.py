@@ -138,6 +138,8 @@ class ClaudeJSON:
             else:
                 response = await self.client.beta.messages.create(**request)
         except anthropic.APIError as exc:
+            if "credit balance" in str(exc).lower():
+                raise AIError("Credito Anthropic esaurito: ricarica su console.anthropic.com → Billing.") from exc
             raise AIError(f"Claude non raggiungibile o richiesta rifiutata ({exc.__class__.__name__}).") from exc
         served = getattr(response, "model", None) or self.model
         cost = cost_eur(served, response.usage, self.eur_per_usd)

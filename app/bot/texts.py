@@ -29,7 +29,8 @@ HELP_OWNER = (
     "/pausa · /riprendi — ferma o riavvia i giri\n"
     "/modalita telefonate | messaggi | misto — cambia la modalità\n"
     "/impostazioni — le impostazioni attuali\n"
-    "/cerca — fai partire un giro adesso (ricerca, analisi, schede)"
+    "/cerca — fai partire un giro adesso (ricerca, analisi, schede)\n"
+    "/verifica — controlla le chiavi di Google e Anthropic, senza spendere"
 )
 
 COLLEGA_USAGE = "Scrivi il codice che hai ricevuto, per esempio:\n/collega ABCD-EFGH"

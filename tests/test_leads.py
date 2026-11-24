@@ -734,3 +734,105 @@ async def test_errore_imprevisto_nel_giro_finisce_nel_riepilogo():
     service, notifier = make_round(repo, Broken([]), None)
     report = await service.run("prova")
     assert any("errore imprevisto" in n for n in report.notes) and "errore imprevisto" in notifier.summaries[0]
+
+
+# ── Verifica delle chiavi senza spendere ─────────────────────
+def _google_error(code: int, status: str, reason: str | None = None, message: str = "errore") -> httpx.Response:
+    details = [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": reason}] if reason else []
+    return httpx.Response(code, json={"error": {"code": code, "message": message, "status": status, "details": details}})
+
+
+@pytest.mark.parametrize(
+    ("response", "ok", "expected"),
+    [
+        (_google_error(400, "INVALID_ARGUMENT", None, "Empty text_query."), True, "chiave valida"),
+        (_google_error(400, "INVALID_ARGUMENT", "API_KEY_INVALID"), False, "non è valida"),
+        (_google_error(403, "PERMISSION_DENIED", "SERVICE_DISABLED"), False, "Abilita"),
+        (_google_error(403, "PERMISSION_DENIED", "BILLING_DISABLED"), False, "fatturazione"),
+        (_google_error(403, "PERMISSION_DENIED", "API_KEY_SERVICE_BLOCKED"), False, "limitata ad altre API"),
+        (_google_error(403, "PERMISSION_DENIED", "API_KEY_HTTP_REFERRER_BLOCKED"), False, "Nessuna"),
+    ],
+)
+async def test_verifica_chiave_google(response, ok, expected):
+    from app.services.keycheck import check_google
+
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return response
+
+    status = await check_google("chiave", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    assert status.ok is ok and expected in status.message
+    body = json.loads(sent[0].content)
+    assert body == {"textQuery": ""} and sent[0].headers["X-Goog-FieldMask"] == "places.id"  # nessuna ricerca vera
+
+
+async def test_verifica_chiave_anthropic_e_registro():
+    import anthropic
+
+    from app.services.keycheck import check_anthropic, check_google, format_statuses
+
+    request = httpx.Request("GET", "https://api.anthropic.com/v1/models/claude-opus-5-5")
+
+    class Models:
+        def __init__(self, error=None):
+            self.error = error
+            self.calls = []
+
+        async def retrieve(self, model_id):
+            self.calls.append(model_id)
+            if self.error:
+                raise self.error
+            return SimpleNamespace(id=model_id, display_name="Claude Opus 5.5")
+
+    good = SimpleNamespace(models=Models())
+    status = await check_anthropic(good, "claude-opus-5-5")
+    assert status.ok and "Claude Opus 5.5" in status.message and good.models.calls == ["claude-opus-5-5"]
+    bad = SimpleNamespace(models=Models(anthropic.AuthenticationError(
+        "invalid x-api-key", response=httpx.Response(401, request=request), body=None)))
+    assert "non è valida" in (await check_anthropic(bad, "claude-opus-5-5")).message
+    missing = SimpleNamespace(models=Models(anthropic.NotFoundError(
+        "not found", response=httpx.Response(404, request=request), body=None)))
+    assert "non è disponibile" in (await check_anthropic(missing, "claude-opus-5-5")).message
+    assert (await check_anthropic(None, "claude-opus-5-5")).ok is None
+    assert (await check_google(None, httpx.AsyncClient())).ok is None
+
+    world = World()
+    owner = await world.repo.create_member(SENDER, "titolare", ALL_DAY)
+    await world.repo.link_member_directly(owner.id, 1001, 1001, "matteo")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _google_error(400, "INVALID_ARGUMENT", None, "Empty text_query.")
+
+    world.app.bot_data.update(
+        config=Config.from_env({"TELEGRAM_BOT_TOKEN": "t", "DATABASE_URL": "postgresql://x", "GOOGLE_MAPS_API_KEY": "g"}),
+        anthropic=good,
+        http=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    replies = await world.send(handlers.verifica, user_id=1001)
+    assert "✅ Anthropic (Claude): chiave valida" in replies[1] and "✅ Google Maps: chiave valida" in replies[1]
+    assert "Prezzo Google non impostato" in replies[1]
+    audit = world.repo.audit[-1]
+    assert audit["action"] == "verifica_chiavi" and audit["details"]["Google Maps"]["ok"] is True
+    assert audit["details"]["prezzo_google_impostato"] is False
+    assert "prezzo" in format_statuses([], False).lower()
+
+
+async def test_credito_anthropic_esaurito_messaggio_chiaro():
+    import anthropic
+
+    repo, _ = await make_repo()
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    class NoCredit(FakeAnthropic):
+        async def create(self, **kwargs):
+            raise anthropic.BadRequestError(
+                "Your credit balance is too low to access the Anthropic API.",
+                response=httpx.Response(400, request=request), body=None,
+            )
+
+    ai = ClaudeJSON(repo, NoCredit(), model="claude-opus-5-5", effort="medium", eur_per_usd=Decimal(1), clock=lambda: NOW)
+    with pytest.raises(AIError) as err:
+        await ai.ask(purpose="analisi", system="s", prompt="p", schema=ANALYSIS_SCHEMA)
+    assert "Credito Anthropic esaurito" in str(err.value)

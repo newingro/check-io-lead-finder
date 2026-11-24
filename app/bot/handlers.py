@@ -296,6 +296,7 @@ async def plain_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 cerca = owner_only(leads.cerca)
 analizza = members_only(leads.analizza)
 annulla = members_only(leads.annulla)
+verifica = owner_only(leads.verifica)
 
 
 async def card_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -343,6 +344,7 @@ def register(app: Application) -> None:
     app.add_handler(CommandHandler("cerca", cerca, filters=private))
     app.add_handler(CommandHandler("analizza", analizza, filters=private))
     app.add_handler(CommandHandler("annulla", annulla, filters=private))
+    app.add_handler(CommandHandler("verifica", verifica, filters=private))
     app.add_handler(CallbackQueryHandler(card_button, pattern=r"^c:"))
     app.add_handler(MessageHandler(private & filters.COMMAND, unknown_command))
     app.add_handler(MessageHandler(private & filters.TEXT & ~filters.COMMAND, plain_text))

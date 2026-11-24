@@ -26,4 +26,5 @@ export const ACTION_LABELS: Record<string, string> = {
   ripresa: "ha riavviato i giri",
   modalita: "ha cambiato modalità",
   pulizia_memoria: "ha cancellato i dati scaduti (restano le impronte)",
+  verifica_chiavi: "ha verificato le chiavi di Google e Anthropic",
 };

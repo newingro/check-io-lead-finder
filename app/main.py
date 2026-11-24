@@ -36,6 +36,7 @@ MEMBER_COMMANDS = [
 ]
 OWNER_COMMANDS = MEMBER_COMMANDS + [
     BotCommand("cerca", "Fai partire un giro adesso"),
+    BotCommand("verifica", "Controlla le chiavi, senza spendere"),
     BotCommand("codice", "Collega una persona: /codice Nome"),
     BotCommand("team", "Le persone del team"),
     BotCommand("pausa", "Metti in pausa i giri"),
@@ -132,6 +133,7 @@ def build_application(config: Config) -> Application:
                 code_ttl=timedelta(minutes=config.link_code_ttl_minutes),
             ),
             on_member_linked=set_member_commands,
+            config=config,
             **services,
         )
         await app.bot.set_my_commands(PUBLIC_COMMANDS, scope=BotCommandScopeDefault())
@@ -142,6 +144,7 @@ def build_application(config: Config) -> Application:
             handlers.watch_settings, interval=config.settings_poll_seconds, first=config.settings_poll_seconds
         )
         app.job_queue.run_repeating(leads.tick, interval=30, first=10)
+        app.create_task(leads.startup_key_check(app), name="verifica-chiavi")
         if await repo.count_linked_owners() == 0:
             log.warning("Nessun titolare collegato: usa /collega con OWNER_SETUP_CODE.")
         log.info("Bot avviato (@%s).", app.bot.username)
