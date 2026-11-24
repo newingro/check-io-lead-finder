@@ -16,7 +16,8 @@ niente numeri, promesse o servizi non confermati.** Aggiornare questo file quand
 - Assistenza agli ospiti 24/7
 - Pulizie e biancheria (squadra e controlli)
 - Manutenzioni
-- Adempimenti: Alloggiati Web, tassa di soggiorno, ISTAT, CIN
+- Adempimenti: registrazione CIN, Alloggiati Web, tassa di soggiorno, ISTAT
+  (nei messaggi scritti si cita solo «registrazione CIN» e «prezzi dinamici»)
 - Rendicontazione al proprietario
 
 ## Condizioni economiche

@@ -82,8 +82,12 @@ def _written_checks(label: str, text: str, sender: str, allowed: set[str], min_l
         problems.append(f"{label}: manca chi siamo (CHECK-iO)")
     elif "check-io" not in " ".join(lines[:2]).lower():
         problems.append(f"{label}: la presentazione di CHECK-iO va all'inizio")
-    if "google" not in lower:
-        problems.append(f"{label}: manca come l'abbiamo trovato (Google Maps)")
+    if "pubblic" not in lower:
+        problems.append(f"{label}: manca come l'abbiamo trovato (dati pubblici online)")
+    if "google" in lower or re.search(r"\bmaps\b", lower):
+        problems.append(f"{label}: non nominare Google o Maps")
+    if re.search(r"alloggiati|istat|tassa di soggiorno", lower):
+        problems.append(f"{label}: della burocrazia cita solo la registrazione CIN")
     if not OPT_OUT.search(text):
         problems.append(f"{label}: manca come dire no")
     first_name = sender.split()[0].lower() if sender.strip() else ""

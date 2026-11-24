@@ -33,7 +33,8 @@ MIN_PASTED_CHARS = 150
 MIN_REVIEWS_CHARS = 80
 REVIEWS_PROMPT = (
     "📝 Recensioni per «{name}»\n"
-    "Apri la scheda su Google Maps (il link è nella scheda), copia 3-5 recensioni (testo, voto e data se ci sono) "
+    "Apri l'annuncio su Booking o Airbnb (o la scheda Google Maps, il link è nella scheda), copia 3-5 recensioni "
+    "(testo, voto e data se ci sono) "
     "e incollale qui in un unico messaggio, senza i nomi di chi le ha scritte.\n"
     "Rifaccio l'analisi e riscrivo i messaggi. Per lasciar perdere: /annulla"
 )

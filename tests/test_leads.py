@@ -87,19 +87,20 @@ def analysis_data(score: int = 80, exclude: bool = False) -> dict[str, Any]:
 
 
 GOOD_WHATSAPP = (
-    "Buongiorno, sono Matteo di CHECK-iO: ci occupiamo di gestione di affitti brevi (check-io.it).\n"
-    "Ho trovato la sua struttura su Google Maps: gli ospiti lodano la posizione, ma 2 delle 5 recensioni che ho letto "
-    "parlano di attese al check-in.\n"
+    "Buongiorno, sono Matteo di CHECK-iO: gestiamo affitti brevi (check-io.it), dal check-in alle pulizie.\n"
+    "Le scrivo perché ho trovato la sua struttura tra i dati pubblici online: gli ospiti lodano la posizione, "
+    "ma 2 delle 5 recensioni che ho letto parlano di attese al check-in.\n"
     "Con noi il check-in si fa in self check-in o con una persona sul posto anche la sera.\n"
     "Le farebbe piacere ricevere un'analisi gratuita della sua struttura?\n"
-    "Se preferisce non essere ricontattato basta scrivermelo e non la ricontatterò. Matteo"
+    "Se preferisce non essere ricontattato basta scrivermelo e non la ricontatterò.\n"
+    "Matteo"
 )
 GOOD_EMAIL_BODY = (
     "Buongiorno,\n"
     "sono Matteo di CHECK-iO, ci occupiamo di gestione di affitti brevi (check-io.it).\n"
-    "Ho trovato la sua struttura su Google Maps e ho letto le recensioni pubbliche.\n"
+    "Gestiamo check-in, pulizie, assistenza agli ospiti 24/7, prezzi dinamici e registrazione CIN.\n"
+    "Ho trovato la sua struttura tra i dati pubblici online e ho letto le recensioni pubbliche.\n"
     "Gli ospiti apprezzano la posizione; 2 recensioni su 5 parlano di attese al check-in.\n"
-    "Gestiamo check-in, pulizie, assistenza agli ospiti 24/7 e adempimenti come Alloggiati Web e tassa di soggiorno.\n"
     "Le farebbe piacere un'analisi gratuita della sua struttura?\n"
     "Se preferisce non essere ricontattato, mi basta una risposta e non la ricontatterò.\n"
     "Matteo D'Amico — CHECK-iO, check-io.it, tel. +39 352 255 4502"
@@ -326,7 +327,7 @@ def test_istruzioni_contengono_i_fatti_confermati_e_le_regole():
     assert "niente di inventato" in system and "Octorate" in system and "al massimo 5 recensioni" in system
     msg = message_system("B", SENDER)
     assert "chiacchierata di 10 minuti" in msg and SENDER in msg and "Vietato" in msg
-    assert "come dire no" in msg.lower() and "Google Maps" in msg
+    assert "come dire no" in msg.lower() and "Non nominare Google" in msg
     assert "1. Presentazione" in msg and "2. La sua struttura" in msg  # prima chi siamo, poi la struttura
     for schema in (ANALYSIS_SCHEMA, MESSAGE_SCHEMA):
         stack = [schema]
@@ -348,9 +349,14 @@ def test_controlli_messaggio_buono_e_cattivo():
     bad["whatsapp"] = "Salve! Con noi guadagni il 30% in più, garantito. Commissione 15%.\nChiamaci."
     problems = check_messages(bad, sender=SENDER, allowed=allowed)
     joined = " ".join(problems)
-    for expected in ("righe", "CHECK-iO", "Google", "come dire no", "nome di chi scrive", "percentuali",
+    for expected in ("righe", "CHECK-iO", "dati pubblici", "come dire no", "nome di chi scrive", "percentuali",
                      "garantit", "commission", "30"):
         assert expected in joined, expected
+    maps = good_messages()
+    maps["whatsapp"] = GOOD_WHATSAPP.replace("tra i dati pubblici online", "su Google Maps (dati pubblici)")
+    maps["email"] = {**maps["email"], "corpo": GOOD_EMAIL_BODY.replace("prezzi dinamici", "Alloggiati Web, ISTAT")}
+    joined = " ".join(check_messages(maps, sender=SENDER, allowed=allowed))
+    assert "non nominare Google o Maps" in joined and "solo la registrazione CIN" in joined
 
 
 # ── Analisi ──────────────────────────────────────────────────

@@ -119,7 +119,8 @@ REGOLA FISSA: niente di inventato.
 - Non stimare guadagni, occupazione o prezzi.
 - Ogni segnale di opportunità ha la sua base: da dove lo ricavi (es. "2 recensioni su 5 lette").
 - Le recensioni scritte arrivano da due fonti: recensioni_google_lette (spesso vuoto: Google non sempre manda i
-  testi) e recensioni_copiate_dal_commerciale (testi copiati a mano da Google Maps). Contale insieme in "lette".
+  testi) e recensioni_copiate_dal_commerciale (testi copiati a mano da Booking, Airbnb o Google Maps). Contale
+  insieme in "lette".
   Google fornisce al massimo 5 recensioni, scelte da Google: non sono "le ultime". Scrivi sempre su quante recensioni
   lette si basa un tema (campi volte / su_quante) e non parlare di "ultime 10".
 - Non riportare nomi di ospiti o di persone. Le sintesi dei temi sono parafrasi, mai citazioni lunghe.
@@ -191,17 +192,17 @@ Obiettivo: far rispondere il proprietario, non vendergli tutto subito.
 
 Il canale principale è WhatsApp (il proprietario ha un cellulare). WhatsApp ed email seguono questo ordine:
 1. Presentazione: saluto, chi scrive e chi siamo (CHECK-iO, gestione di affitti brevi, check-io.it) e cosa
-   facciamo, in una o due frasi concrete prese dai servizi confermati (annunci su più portali e prezzi
-   aggiornati, check-in e self check-in con persona sul posto anche la sera, assistenza agli ospiti 24/7,
-   pulizie e biancheria, adempimenti come Alloggiati Web, tassa di soggiorno, ISTAT e CIN).
-2. La sua struttura: come l'abbiamo trovata (la sua scheda su Google Maps) e cosa abbiamo visto, con dati veri
-   dell'analisi: voto e numero di recensioni; se ci sono recensioni lette, i problemi che emergono (temi
+   facciamo, in una o due frasi semplici: check-in e self check-in (anche la sera), pulizie e biancheria,
+   assistenza agli ospiti 24/7, annunci su più portali con prezzi dinamici, registrazione CIN.
+2. La sua struttura: perché scriviamo proprio a lui (abbiamo trovato la sua struttura e il suo contatto tra i
+   dati pubblici online: dillo in modo semplice, con la parola "pubblici") e cosa abbiamo visto, con dati veri
+   dell'analisi: voto e numero di recensioni pubbliche; se ci sono recensioni lette, i problemi che emergono (temi
    negativi, con quante volte su quante lette) e cosa apprezzano gli ospiti; se non ci sono recensioni lette,
-   i segnali della scheda e del sito (poche recensioni, presente solo su Google, nessun sito, pochi portali).
+   i segnali della struttura (poche recensioni, nessun sito proprio, pochi portali).
    Riporta in dettaglio_usato i fatti che hai usato.
 3. Come CHECK-iO risolverebbe proprio quei punti, in una frase (check-in: self check-in o persona sul posto
    anche la sera; pulizia: squadra e controlli; comunicazione: assistenza 24/7; visibilità e occupazione: più
-   portali e prezzi aggiornati) e un vantaggio per lui (tempo libero, recensioni migliori, più prenotazioni).
+   portali e prezzi dinamici) e un vantaggio per lui (tempo libero, recensioni migliori, più prenotazioni).
 4. {variante}
 5. Come dire no, con una frase semplice: se preferisce non essere ricontattato basta scriverlo e non lo
    ricontatteremo.
@@ -214,6 +215,10 @@ Regole (obbligatorie):
   "10 minuti"; nella versione B (chiacchierata di 10 minuti) non proporre l'analisi gratuita.
 - Se recensioni_lette è 0 non hai letto recensioni: non dirlo e non citare problemi degli ospiti; usa solo voto,
   numero di recensioni e i segnali della scheda e del sito.
+- Della burocrazia cita solo "registrazione CIN": non elencare Alloggiati Web, tassa di soggiorno, ISTAT o altri
+  adempimenti.
+- Non nominare Google, Google Maps né la "scheda": niente "ho visto la sua casa su Maps" o "recensioni su
+  Maps". Parla della sua struttura e delle sue recensioni pubbliche online.
 - Nessun guadagno garantito.
 - Dai del "lei".
 
