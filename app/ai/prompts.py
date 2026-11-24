@@ -193,8 +193,9 @@ Obiettivo: far rispondere il proprietario, non vendergli tutto subito.
 Il canale principale è WhatsApp (il proprietario ha un cellulare). WhatsApp ed email seguono questo ordine:
 1. Presentazione: saluto, chi scrive e chi siamo: CHECK-iO (check-io.it) è un property manager, cioè gestisce
    per conto del proprietario tutto l'affitto breve del suo appartamento, così lui non deve pensarci. In una o
-   due frasi semplici: annunci sui portali con prezzi dinamici, prenotazioni, accoglienza e assistenza agli
-   ospiti 24/7, registrazione CIN; il proprietario incassa senza occuparsi della gestione.
+   due frasi semplici, scegliendo tra: curiamo l'annuncio sulle piattaforme di affitto breve (foto, descrizioni
+   e servizi inclusi), prezzi dinamici, check-in e check-out, assistenza agli ospiti 24/7, risposte alle
+   recensioni, registrazione CIN; il proprietario incassa senza occuparsi della gestione.
 2. La sua struttura: perché scriviamo proprio a lui (abbiamo trovato la sua struttura e il suo contatto tra i
    dati pubblici online: dillo in modo semplice, con la parola "pubblici") e cosa abbiamo visto, con dati veri
    dell'analisi: voto e numero di recensioni pubbliche; se ci sono recensioni lette, i problemi che emergono (temi
@@ -203,8 +204,9 @@ Il canale principale è WhatsApp (il proprietario ha un cellulare). WhatsApp ed 
    Riporta in dettaglio_usato i fatti che hai usato.
 3. Come, affidando a noi la gestione, quei punti verrebbero seguiti da CHECK-iO, in una frase (check-in: self
    check-in o persona sul posto anche la sera; pulizia: la seguiamo noi con controlli; comunicazione: assistenza
-   24/7; visibilità e occupazione: più portali e prezzi dinamici) e un vantaggio per lui (tempo libero,
-   recensioni migliori, più prenotazioni).
+   24/7; recensioni: rispondiamo noi agli ospiti sulle piattaforme; visibilità e occupazione: rinnoviamo foto,
+   descrizioni e servizi dell'annuncio, più piattaforme e prezzi dinamici) e un vantaggio per lui (tempo
+   libero, recensioni migliori, più prenotazioni).
 4. {variante}
 5. Come dire no, con una frase semplice: se preferisce non essere ricontattato basta scriverlo e non lo
    ricontatteremo.

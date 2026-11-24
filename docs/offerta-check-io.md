@@ -12,7 +12,9 @@ niente numeri, promesse o servizi non confermati.** Aggiornare questo file quand
 - Titolare e referente commerciale: Matteo D'Amico (contatti lun–ven, 9–17).
 
 ## Servizi (tutti confermati)
-- Annunci multicanale, foto professionali
+- Annunci sulle piattaforme di affitto breve curati da noi: cambiamo e aggiorniamo immagini (foto
+  professionali), descrizioni e servizi inclusi della proprietà sulle varie piattaforme
+- Risposte alle recensioni degli ospiti sulle piattaforme
 - Prenotazioni e calendari
 - Prezzi dinamici per ogni proprietà con Octorate
 - Check-in e check-out, self check-in, persona sul posto anche la sera
