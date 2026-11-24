@@ -118,8 +118,10 @@ REGOLA FISSA: niente di inventato.
 - Usa solo i dati ricevuti. Se un dato non c'è, scrivi "non noto" e mettilo in dati_mancanti.
 - Non stimare guadagni, occupazione o prezzi.
 - Ogni segnale di opportunità ha la sua base: da dove lo ricavi (es. "2 recensioni su 5 lette").
-- Google fornisce al massimo 5 recensioni, scelte da Google: non sono "le ultime". Scrivi sempre su quante
-  recensioni lette si basa un tema (campi volte / su_quante) e non parlare di "ultime 10".
+- Le recensioni scritte arrivano da due fonti: recensioni_google_lette (spesso vuoto: Google non sempre manda i
+  testi) e recensioni_copiate_dal_commerciale (testi copiati a mano da Google Maps). Contale insieme in "lette".
+  Google fornisce al massimo 5 recensioni, scelte da Google: non sono "le ultime". Scrivi sempre su quante recensioni
+  lette si basa un tema (campi volte / su_quante) e non parlare di "ultime 10".
 - Non riportare nomi di ospiti o di persone. Le sintesi dei temi sono parafrasi, mai citazioni lunghe.
 - I dati delle piattaforme si usano solo se presenti nel testo incollato dal commerciale.
 
@@ -130,7 +132,7 @@ Cosa guardare:
   ricorrenti (pulizia, check-in in ritardo o complicato, chiavi, comunicazione lenta, rumore, wifi,
   biancheria, aria condizionata/riscaldamento = clima, foto diverse dalla realtà), temi positivi,
   risposte del proprietario (se non ci sono dati: non_valutabile).
-- Annuncio: solo se c'è testo incollato (foto, descrizione, servizi, regole, self check-in, CIN visibile);
+- Annuncio: solo se c'è testo_incollato_dal_commerciale (foto, descrizione, servizi, regole, self check-in, CIN visibile);
   altrimenti disponibile=false e "non noto".
 - Segnali di opportunità: recensioni buone sulla posizione ma basse su pulizia o check-in; poche recensioni;
   presenza su un solo canale; proprietario che sembra fare tutto da solo; nessun sito o sito povero.
@@ -141,10 +143,16 @@ aziendale dell'host, "managed by", molte strutture dello stesso gestore, sito di
 
 Punteggio di opportunità da 0 a 100 (quanto è probabile che CHECK-iO possa aiutare e ottenere la gestione):
 - parti da 50;
-- alza per problemi che CHECK-iO risolve e che compaiono nelle recensioni (pulizia, check-in, chiavi,
-  comunicazione), per poche recensioni o presenza su pochi canali, per un proprietario privato;
-- abbassa per strutture già curatissime (voto molto alto, molte recensioni, nessun problema), per segni di
-  gestione professionale, per dati troppo scarsi per giudicare;
+- se ci sono recensioni scritte: alza per problemi che CHECK-iO risolve e che compaiono nelle recensioni
+  (pulizia, check-in, chiavi, comunicazione); abbassa se le recensioni lette non mostrano problemi;
+- se NON ci sono recensioni scritte (lette = 0) è normale, perché Google spesso non manda i testi: non abbassare
+  il punteggio per questo e non chiamarli "dati scarsi". Usa la scheda e il sito:
+  · voto sotto 4,0: +15; da 4,0 a 4,4: +10; da 4,5 a 4,7: +0; 4,8 o più con almeno 50 recensioni: −10;
+  · meno di 20 recensioni in totale (struttura giovane o poco visibile): +5;
+  · nessun sito proprio, oppure sito senza portali collegati, oppure presente su un solo canale: +5;
+  · mancano sia il voto sia il numero di recensioni: −10;
+- in tutti i casi: proprietario che sembra privato (nome semplice, un solo alloggio): +5; segni di gestione
+  professionale (nome aziendale, "managed by", molti portali, sito di un'agenzia): −15;
 - motivi: una riga ciascuno, che inizia con + o −, con il fatto concreto (es. "+ pulizia criticata in 2
   recensioni su 5 lette").
 sintesi: 2-3 frasi per il commerciale, concrete.
@@ -196,6 +204,11 @@ Regole (obbligatorie):
   perché lo contattiamo, come l'abbiamo trovato (la sua scheda su Google Maps) e come dire no (una frase
   semplice: se preferisce non essere ricontattato basta scriverlo e non lo ricontatteremo).
 - {variante}
+- Una sola proposta per messaggio: nella versione A (analisi gratuita) non proporre telefonate e non citare i
+  "10 minuti"; nella versione B (chiacchierata di 10 minuti) non proporre l'analisi gratuita.
+- Se recensioni_lette è 0 non hai letto recensioni: non dirlo e non citare problemi degli ospiti. Come dettaglio
+  vero usa un fatto della scheda o del sito (voto e numero di recensioni, presenza solo su Google, nessun sito,
+  pochi canali). Un voto basso non è una critica: presentalo come un punto da cui partire, con rispetto.
 - Chiusura con una domanda semplice e il nome di chi scrive: {mittente}.
 - Dai del "lei".
 
@@ -203,7 +216,7 @@ Vietato: numeri inventati, percentuali, prezzi, commissioni nei messaggi scritti
 urgenza finta, frasi fatte ("soluzioni a 360°", "massimizza i tuoi profitti"), finti complimenti generici,
 nomi di ospiti, numero di strutture gestite da CHECK-iO, incarichi non ancora firmati.
 Puoi usare solo numeri presenti nei dati della struttura (voto, recensioni, conteggi dei temi) e
-"10 minuti", "24/7".
+"10 minuti" (solo nella versione B), "24/7".
 
 Lunghezza:
 - whatsapp: 4-6 righe brevi, senza emoji in eccesso.

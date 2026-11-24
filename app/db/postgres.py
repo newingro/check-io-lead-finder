@@ -492,6 +492,17 @@ class PostgresRepository:
             row = await cur.fetchone()
         return int(row["n"])
 
+    async def recent_details_runs(self, limit: int) -> list[int]:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "select coalesce(reviews_text, 0) as n from search_runs "
+                "where query in ('dettagli scheda', 'prova recensioni') and status = 'completata' "
+                "order by started_at desc limit %s",
+                (limit,),
+            )
+            rows = await cur.fetchall()
+        return [int(r["n"]) for r in rows]
+
     async def start_search_run(self, *, zone: str, query: str, cell: str | None, provincia: str | None) -> str:
         async with self.pool.connection() as conn:
             cur = await conn.execute(

@@ -112,7 +112,7 @@ def card_keyboard(prop: Property) -> InlineKeyboardMarkup | None:
         return InlineKeyboardMarkup(
             [
                 [_btn("✅ Approva", "ok", prop), _btn("✏️ Modifica", "ed", prop), _btn("❌ Scarta", "no", prop)],
-                [_btn("📧 Email", "em", prop), _btn("📞 Telefonata", "tel", prop)],
+                [_btn("📧 Email", "em", prop), _btn("📞 Telefonata", "tel", prop), _btn("📝 Recensioni", "rv", prop)],
                 [_btn("🏢 Già gestita da altri", "pm", prop), _btn("🚫 Non contattare", "oo", prop)],
             ]
         )
@@ -124,7 +124,7 @@ def card_keyboard(prop: Property) -> InlineKeyboardMarkup | None:
         if prop.email:
             rows.append([_btn("📧 Testo email", "em", prop), _btn("✅ Inviata email", "se", prop)])
         rows.append([_btn("📞 Telefonata", "tel", prop), _btn("✏️ Modifica", "ed", prop), _btn("❌ Scarta", "no", prop)])
-        rows.append([_btn("🚫 Non contattare", "oo", prop)])
+        rows.append([_btn("📝 Recensioni", "rv", prop), _btn("🚫 Non contattare", "oo", prop)])
         return InlineKeyboardMarkup(rows)
     if prop.status == "contattato":
         return InlineKeyboardMarkup([[_btn("📞 Telefonata", "tel", prop), _btn("🚫 Non contattare", "oo", prop)]])

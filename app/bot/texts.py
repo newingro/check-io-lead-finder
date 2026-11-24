@@ -30,7 +30,8 @@ HELP_OWNER = (
     "/pausa · /riprendi — ferma o riavvia i giri\n"
     "/modalita telefonate | messaggi | misto — cambia la modalità\n"
     "/impostazioni — le impostazioni attuali\n"
-    "/verifica — controlla le chiavi di Google e Anthropic, senza spendere"
+    "/verifica — controlla le chiavi di Google e Anthropic, senza spendere\n"
+    "/verifica recensioni — prova se la scheda singola di Google manda le recensioni (1 richiesta)"
 )
 
 COLLEGA_USAGE = "Scrivi il codice che hai ricevuto, per esempio:\n/collega ABCD-EFGH"

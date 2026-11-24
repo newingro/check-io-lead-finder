@@ -22,7 +22,11 @@ def _clamp(value: Any) -> int:
 
 
 def analysis_payload(
-    prop: Property, reviews: list[dict[str, Any]], pasted_text: str | None = None, pasted_link: str | None = None
+    prop: Property,
+    reviews: list[dict[str, Any]],
+    pasted_text: str | None = None,
+    pasted_link: str | None = None,
+    pasted_kind: str = "annuncio",
 ) -> dict[str, Any]:
     site = prop.website_check or {}
     google = prop.google_rating
@@ -45,9 +49,13 @@ def analysis_payload(
             "numero_recensioni": google.get("recensioni"),
         },
         "recensioni_google_lette": reviews,
-        "nota": "Google fornisce al massimo 5 recensioni, scelte da Google. I nomi degli autori sono stati rimossi.",
+        "testi_recensioni_disponibili": bool(reviews) or bool(pasted_text and pasted_kind == "recensioni"),
+        "nota": "Google fornisce al massimo 5 recensioni, scelte da Google, e spesso nessun testo. "
+        "I nomi degli autori sono stati rimossi.",
     }
-    if pasted_text:
+    if pasted_text and pasted_kind == "recensioni":
+        payload["recensioni_copiate_dal_commerciale"] = pasted_text[:12000]
+    elif pasted_text:
         payload["testo_incollato_dal_commerciale"] = {"link": pasted_link or "non indicato", "testo": pasted_text[:12000]}
     return payload
 
@@ -71,6 +79,7 @@ class AnalysisService:
         *,
         pasted_text: str | None = None,
         pasted_link: str | None = None,
+        pasted_kind: str = "annuncio",
         require_contacts: bool = True,
     ) -> Property:
         """Analizza e salva. Restituisce la struttura aggiornata. Può sollevare BudgetExceeded."""
@@ -81,7 +90,7 @@ class AnalysisService:
             result = await self.ai.ask(
                 purpose="analisi",
                 system=analysis_system(),
-                prompt=as_prompt("Dati della struttura da analizzare:", analysis_payload(prop, reviews, pasted_text, pasted_link)),
+                prompt=as_prompt("Dati della struttura da analizzare:", analysis_payload(prop, reviews, pasted_text, pasted_link, pasted_kind)),
                 schema=ANALYSIS_SCHEMA,
                 property_id=prop.id,
             )

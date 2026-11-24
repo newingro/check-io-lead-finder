@@ -31,6 +31,9 @@ OPT_OUT = re.compile(
     re.IGNORECASE,
 )
 NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
+ONLY_B = re.compile(r"\b10\s*minuti\b", re.IGNORECASE)  # la chiacchierata è della versione B
+ONLY_A = re.compile(r"analisi\s+gratuit", re.IGNORECASE)  # l'analisi gratuita è della versione A
+READ_REVIEWS = re.compile(r"\b(ho|abbiamo)\s+lett[oe]\b[^.\n]{0,40}\brecension", re.IGNORECASE)
 # "10 minuti", "24/7" e il numero ufficiale di CHECK-iO (+39 352 255 4502), che va nella firma delle email.
 ALWAYS_ALLOWED = {"10", "24", "7", "39", "352", "255", "4502"}
 
@@ -95,13 +98,29 @@ def _written_checks(label: str, text: str, sender: str, allowed: set[str], min_l
     return problems
 
 
-def check_messages(messages: dict[str, Any], *, sender: str, allowed: set[str]) -> list[str]:
+def _variant_checks(label: str, text: str, variant: str | None, reviews_read: int | None) -> list[str]:
+    problems: list[str] = []
+    if variant == "A" and ONLY_B.search(text):
+        problems.append(f"{label}: versione A (analisi gratuita): non proporre i 10 minuti al telefono")
+    if variant == "B" and ONLY_A.search(text):
+        problems.append(f"{label}: versione B (chiacchierata di 10 minuti): non proporre l'analisi gratuita")
+    if reviews_read == 0 and READ_REVIEWS.search(text):
+        problems.append(f"{label}: nessuna recensione letta: non dire di averle lette")
+    return problems
+
+
+def check_messages(
+    messages: dict[str, Any], *, sender: str, allowed: set[str], variant: str | None = None,
+    reviews_read: int | None = None,
+) -> list[str]:
     problems: list[str] = []
     whatsapp = str(messages.get("whatsapp") or "")
     problems += _written_checks("WhatsApp", whatsapp, sender, allowed, 3, 8)
+    problems += _variant_checks("WhatsApp", whatsapp, variant, reviews_read)
     email = messages.get("email") or {}
     subject = str(email.get("oggetto") or "")
     body = str(email.get("corpo") or "")
+    problems += _variant_checks("Email", subject + "\n" + body, variant, reviews_read)
     if not subject.strip() or len(subject) > 90:
         problems.append("Email: oggetto mancante o troppo lungo")
     problems += _written_checks("Email", body, sender, allowed, 5, 16)

@@ -2,8 +2,10 @@
 
 1. Ricerca: il radar sceglie le celle, Google Places cerca, la memoria scarta le già viste.
 2. Sito: per le strutture nuove si legge il sito proprio (email, CIN, portali).
-3. Analisi: Claude analizza le strutture nuove (con le recensioni appena lette).
+3. Analisi: Claude analizza le strutture nuove (con le recensioni, se Google le manda).
 4. Schede: le migliori (punteggio ≥ minimo) vanno a chi è di turno, con i messaggi pronti.
+   Se la scheda singola di Google manda le recensioni (lo dicono le ultime letture), prima di
+   mandarle si leggono le recensioni delle candidate e si rifà l'analisi: una richiesta ciascuna.
 5. Riepilogo al titolare, con la spesa del giro e del mese.
 
 Tetti di spesa: prima di ogni ricerca e di ogni chiamata AI si controlla la spesa del mese.
@@ -37,6 +39,9 @@ log = logging.getLogger(__name__)
 
 # Una ricerca = una sola richiesta a Google (fino a 20 strutture per cella): spesa prevedibile.
 PAGES_PER_SEARCH = 1
+DETAILS_QUERY = "dettagli scheda"  # lettura della scheda singola durante un giro
+TEST_QUERY = "prova recensioni"  # prova da una richiesta (all'avvio o con /verifica recensioni)
+DETAILS_WINDOW = 5  # se nelle ultime 5 letture nessuna ha portato recensioni, non si legge più
 
 
 class Notifier(Protocol):
@@ -69,7 +74,55 @@ class RoundReport:
     google_limit: int = 0
     reviews_raw: int = 0
     reviews_text: int = 0
+    details_requests: int = 0
+    details_reviews: int = 0
+    reanalyzed: int = 0
     notes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class GoogleBudget:
+    """Richieste Google ancora disponibili nel giro: tetto gratuito del mese e/o tetto in euro."""
+
+    limit: int
+    used: int
+    price_set: bool
+    page_cost: Decimal
+    month_search: Decimal
+    search_budget: Decimal
+
+    def can_spend(self, pages: int = 1) -> bool:
+        if self.limit <= 0 and not self.price_set:
+            return False
+        if self.limit > 0 and self.used + pages > self.limit:
+            return False
+        return not (self.price_set and self.month_search + self.page_cost * pages > self.search_budget)
+
+    def spend(self, cost: Decimal, pages: int = 1) -> None:
+        self.used += pages
+        self.month_search += cost
+
+
+@dataclass(frozen=True)
+class DetailsRead:
+    reviews: list[dict]
+    raw: int
+    cost: Decimal
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class DetailsTest:
+    """Esito della prova da una richiesta sulla scheda singola."""
+
+    outcome: str  # recensioni | senza_testo | nessuna | errore | spenta | limite | nessuna_struttura | giro_in_corso
+    name: str = ""
+    ratings: int = 0
+    raw: int = 0
+    text: int = 0
+    used: int = 0
+    limit: int = 0
+    error: str = ""
 
 
 def euro(value: Decimal) -> str:
@@ -85,6 +138,11 @@ def format_report(r: RoundReport, timezone: ZoneInfo) -> str:
     if r.results:
         lines.append(f"   nuove {r.new} · già in memoria {r.known} · escluse {r.excluded}")
         lines.append(f"   recensioni ricevute da Google: {r.reviews_text}")
+    if r.details_requests:
+        lines.append(
+            f"   schede singole lette: {r.details_requests} · recensioni trovate {r.details_reviews}"
+            f" · analisi rifatte {r.reanalyzed}"
+        )
     lines.append(f"🧠 Analizzate {r.analyzed} · scartate {r.discarded}" + (f" · errori {r.ai_errors}" if r.ai_errors else ""))
     lines.append(f"📨 Schede inviate {r.proposed}" + (f" · in attesa di qualcuno di turno {r.waiting}" if r.waiting else ""))
     lines.append(f"💶 Spesa del giro: ricerche {euro(r.search_cost)} · AI {euro(r.ai_cost)}")
@@ -92,13 +150,21 @@ def format_report(r: RoundReport, timezone: ZoneInfo) -> str:
         f"   Mese: ricerche {euro(r.month_search)} su {euro(r.search_budget)} · AI {euro(r.month_ai)} su {euro(r.ai_budget)}"
     )
     notes = list(r.notes)
-    if r.results and not r.reviews_text:
+    if r.results and not r.reviews_text and not r.details_reviews:
         notes.append(
-            "Google non ha mandato recensioni: l'analisi si basa solo su voto, numero di recensioni e sito, "
-            "quindi i punteggi restano bassi."
+            "Google non ha mandato recensioni: l'analisi si basa su voto, numero di recensioni, canali e sito. "
+            "Per le strutture migliori potete incollarle voi col pulsante «📝 Aggiungi recensioni»."
         )
     lines += [f"⚠️ {note}" for note in notes]
     return "\n".join(lines)
+
+
+def wants_details(prop: Property) -> bool:
+    """Ha senso leggere la scheda singola: ci sono recensioni su Google ma nessun testo letto."""
+    if not prop.google_place_id or not (prop.google_rating.get("recensioni") or 0):
+        return False
+    read = ((prop.analysis or {}).get("recensioni") or {}).get("lette")
+    return not read
 
 
 def contactable(prop: Property, mode: str) -> bool:
@@ -260,6 +326,12 @@ class RoundService:
 
             await asyncio.gather(*(check(pid) for pid in reviews))
 
+        budget = GoogleBudget(
+            limit=limit, used=google_used, price_set=self.price is not None, page_cost=self.page_cost,
+            month_search=month_search, search_budget=report.search_budget,
+        )
+        details_ok = self.places is not None and await self.details_available()
+
         # 3. Analisi
         if self.analysis is None:
             report.notes.append("Analisi AI spenta: manca ANTHROPIC_API_KEY nelle variabili di Railway.")
@@ -269,14 +341,9 @@ class RoundService:
             queue.sort(key=lambda p: p.id not in reviews)  # prima quelle appena trovate
             for prop in queue:
                 prop_reviews = reviews.get(prop.id)
-                can_fetch = self.places is not None and (self.price is not None or limit > 0)
-                if limit > 0 and google_used >= limit:
-                    can_fetch = False
-                if prop_reviews is None and prop.google_place_id and can_fetch:
-                    prop_reviews, cost = await self.fetch_reviews(prop)
-                    google_used += 1
-                    month_search += cost
-                    report.search_cost += cost
+                if prop_reviews is None and details_ok and wants_details(prop) and budget.can_spend():
+                    # rimasta in coda da un giro precedente: si rileggono le recensioni (una richiesta)
+                    prop_reviews = await self._read_details(prop, budget, report)
                 try:
                     analyzed = await self.analysis.analyze(prop, prop_reviews or [])
                 except BudgetExceeded as exc:
@@ -291,12 +358,15 @@ class RoundService:
 
         # 4. Schede a chi è di turno
         if self.messages is not None:
-            await self.propose(report, settings.min_score, settings.cards_per_run, state.mode, now)
+            await self.propose(
+                report, settings.min_score, settings.cards_per_run, state.mode, now,
+                budget=budget if details_ok else None,
+            )
 
         _, month_ai = await self.repo.month_costs(since)
-        report.month_search = month_search
+        report.month_search = budget.month_search
         report.month_ai = month_ai
-        report.google_requests = google_used
+        report.google_requests = budget.used
         report.ai_cost = month_ai - month_ai_before
         return report
 
@@ -322,9 +392,21 @@ class RoundService:
         if fields.get("email_normalized") and await self.repo.is_opted_out(None, fields["email_normalized"]):
             await self.repo.update_property(property_id, status="scartato", discard_reason="opt_out")
 
-    async def fetch_reviews(self, prop: Property) -> tuple[list[dict], Decimal]:
-        """Strutture rimaste in coda da un giro precedente: si rileggono le recensioni (una richiesta pagata)."""
-        run_id = await self.repo.start_search_run(zone=prop.zone or "", query="dettagli scheda", cell=None, provincia=None)
+    async def details_available(self) -> bool:
+        """La scheda singola di Google manda le recensioni? Lo dicono le ultime letture registrate."""
+        return any(n > 0 for n in await self.repo.recent_details_runs(DETAILS_WINDOW))
+
+    async def _read_details(self, prop: Property, budget: GoogleBudget, report: RoundReport) -> list[dict]:
+        read = await self.fetch_details(prop)
+        budget.spend(read.cost)
+        report.search_cost += read.cost
+        report.details_requests += 1
+        report.details_reviews += len(read.reviews)
+        return read.reviews
+
+    async def fetch_details(self, prop: Property, query: str = DETAILS_QUERY) -> DetailsRead:
+        """Legge la scheda singola (con le recensioni): una richiesta, registrata come ricerca."""
+        run_id = await self.repo.start_search_run(zone=prop.zone or "", query=query, cell=None, provincia=None)
         try:
             found = await self.places.details(prop.google_place_id)  # type: ignore[union-attr, arg-type]
         except (PlacesError, httpx.HTTPError) as exc:
@@ -332,12 +414,51 @@ class RoundService:
                 run_id, status="errore", results=0, new=0, known=0, excluded=0, pages=1, cost_eur=Decimal(0),
                 error=str(exc)[:500],
             )
-            return [], Decimal(0)
+            return DetailsRead([], 0, Decimal(0), str(exc)[:200])
         cost = self.page_cost
         await self.repo.finish_search_run(
-            run_id, status="completata", results=1, new=0, known=1, excluded=0, pages=1, cost_eur=cost
+            run_id, status="completata", results=1, new=0, known=1, excluded=0, pages=1, cost_eur=cost,
+            reviews_raw=found.reviews_raw, reviews_text=len(found.reviews),
         )
-        return found.reviews, cost
+        return DetailsRead(found.reviews, found.reviews_raw, cost)
+
+    async def test_details(self) -> DetailsTest:
+        """Prova da una sola richiesta: la scheda singola di Google manda le recensioni?
+
+        Si usa la struttura in memoria con più recensioni su Google (più probabile che ne arrivino).
+        """
+        if self.places is None:
+            return DetailsTest("spenta")
+        if self.lock.locked():
+            return DetailsTest("giro_in_corso")
+        async with self.lock:
+            settings = await self.repo.get_settings()
+            limit = settings.google_monthly_requests
+            used = await self.repo.month_google_requests(month_start(self.clock()))
+            if limit <= 0 and self.price is None:
+                return DetailsTest("spenta")
+            if limit > 0 and used >= limit:
+                return DetailsTest("limite", used=used, limit=limit)
+            pool = [
+                p for status in ("analizzato", "proposto", "approvato", "contattato")
+                for p in await self.repo.properties_by_status(status, 500)
+                if p.google_place_id and (p.google_rating.get("recensioni") or 0) > 0
+            ]
+            if not pool:
+                return DetailsTest("nessuna_struttura", used=used, limit=limit)
+            prop = max(pool, key=lambda p: p.google_rating.get("recensioni") or 0)
+            read = await self.fetch_details(prop, TEST_QUERY)
+            ratings = int(prop.google_rating.get("recensioni") or 0)
+            common = {"name": prop.name, "ratings": ratings, "used": used + 1, "limit": limit}
+            if read.error:
+                return DetailsTest("errore", error=read.error, **common)
+            if read.reviews:
+                outcome = "recensioni"
+            elif read.raw:
+                outcome = "senza_testo"
+            else:
+                outcome = "nessuna"
+            return DetailsTest(outcome, raw=read.raw, text=len(read.reviews), **common)
 
     async def eligible_members(self, now: datetime) -> list[LeadFinder]:
         local = now.astimezone(self.timezone)
@@ -346,18 +467,37 @@ class RoundService:
             if m.is_active and m.telegram_chat_id and m.receives_cards and on_shift(m.shifts, local)
         ]
 
-    async def propose(self, report: RoundReport, min_score: int, limit: int, mode: str, now: datetime) -> None:
+    async def propose(
+        self, report: RoundReport, min_score: int, limit: int, mode: str, now: datetime,
+        budget: GoogleBudget | None = None,
+    ) -> None:
+        """Schede a chi è di turno. Con `budget` (la scheda singola manda le recensioni) prima di scrivere
+        i messaggi si leggono le recensioni della candidata e si rifà l'analisi."""
         candidates = [p for p in await self.repo.proposal_candidates(min_score, limit * 3) if contactable(p, mode)]
-        candidates = candidates[:limit]
         if not candidates:
             return
         members = await self.eligible_members(now)
         if not members:
-            report.waiting = len(candidates)
+            report.waiting = min(len(candidates), limit)
             report.notes.append("Nessuno di turno adesso: le schede partono al prossimo giro con qualcuno di turno.")
             return
         load = await self.repo.open_assignments()
         for prop in candidates:
+            if report.proposed >= limit:
+                break
+            if budget is not None and self.analysis is not None and wants_details(prop) and budget.can_spend():
+                found = await self._read_details(prop, budget, report)
+                if found:
+                    try:
+                        prop = await self.analysis.analyze(prop, found)
+                    except BudgetExceeded as exc:
+                        report.notes.append(str(exc) + " Schede ferme.")
+                        break
+                    report.reanalyzed += 1
+                    if prop.status != "analizzato" or (prop.score or 0) < min_score:
+                        continue  # con le recensioni non è più tra le migliori
+                elif not await self.details_available():
+                    budget = None  # Google ha smesso di mandarle: niente altre richieste
             member = min(members, key=lambda m: (load.get(m.id, 0), m.name))
             try:
                 await self.messages.write(prop, member.name)  # type: ignore[union-attr]

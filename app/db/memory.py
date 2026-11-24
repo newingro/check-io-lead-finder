@@ -314,6 +314,14 @@ class InMemoryRepository:
     async def month_google_requests(self, since: datetime) -> int:
         return sum(int(r.get("pages") or 0) for r in self.search_runs.values() if r["started_at"] >= since)
 
+    async def recent_details_runs(self, limit: int) -> list[int]:
+        runs = [
+            r for r in self.search_runs.values()
+            if r["query"] in ("dettagli scheda", "prova recensioni") and r["status"] == "completata"
+        ]
+        runs.sort(key=lambda r: r["started_at"], reverse=True)
+        return [int(r.get("reviews_text") or 0) for r in runs[:limit]]
+
     async def start_search_run(self, *, zone: str, query: str, cell: str | None, provincia: str | None) -> str:
         run_id = str(uuid.uuid4())
         self.search_runs[run_id] = {

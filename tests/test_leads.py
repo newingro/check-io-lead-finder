@@ -509,7 +509,7 @@ def test_scheda_testo_e_pulsanti():
     assert "Baita &lt;Neve&gt; &amp; Co" in text and "Punteggio 80/100" in text and "check-in 2/5" in text
     assert "Messaggio WhatsApp" in text and "Versione A" in text and len(text) <= 4000
     labels = [b.text for row in cards.card_keyboard(prop).inline_keyboard for b in row]
-    assert labels == ["✅ Approva", "✏️ Modifica", "❌ Scarta", "📧 Email", "📞 Telefonata",
+    assert labels == ["✅ Approva", "✏️ Modifica", "❌ Scarta", "📧 Email", "📞 Telefonata", "📝 Recensioni",
                       "🏢 Già gestita da altri", "🚫 Non contattare"]
     approved = _card_property("approvato")
     buttons = [b for row in cards.card_keyboard(approved).inline_keyboard for b in row]
@@ -931,3 +931,186 @@ async def test_coda_vecchia_rispetta_il_tetto_delle_richieste_gratuite():
     # la ricerca usa l'ultima richiesta gratuita (2 su 2): niente richiesta in più per rileggere le recensioni
     assert report.google_requests == 2 and places.details_calls == 0
     assert report.analyzed == 1
+
+
+
+# ── Recensioni: varianti, punteggio senza testi, scheda singola, recensioni incollate ──
+def test_controlli_variante_e_recensioni_non_lette():
+    from app.ai.guard import allowed_numbers, check_messages
+
+    allowed = allowed_numbers({"voto": 4.2, "recensioni": 37}, analysis_data())
+    good = good_messages()
+    assert check_messages(good, sender=SENDER, allowed=allowed, variant="A", reviews_read=5) == []
+    mixed = {**good, "whatsapp": GOOD_WHATSAPP.replace("ricevere un'analisi gratuita", "fare 10 minuti al telefono")}
+    problems = check_messages(mixed, sender=SENDER, allowed=allowed, variant="A", reviews_read=5)
+    assert any("versione A" in p for p in problems)
+    problems = check_messages(good, sender=SENDER, allowed=allowed, variant="B", reviews_read=5)
+    assert any("versione B" in p for p in problems)  # "analisi gratuita" nella versione B
+    problems = check_messages(good, sender=SENDER, allowed=allowed, variant="A", reviews_read=0)
+    assert any("non dire di averle lette" in p for p in problems)  # l'email dice "ho letto le recensioni"
+
+
+def test_punteggio_senza_testi_e_recensioni_incollate_nel_prompt():
+    from app.ai.prompts import analysis_system, message_system
+    from app.services.analysis import analysis_payload
+
+    system = analysis_system()
+    assert "non abbassare" in system and "voto sotto 4,0: +15" in system
+    assert "recensioni_copiate_dal_commerciale" in system
+    assert "non citare i\n  \"10 minuti\"" in message_system("A", SENDER) or "10 minuti" in message_system("A", SENDER)
+    prop = Property(id="p1", name="Baita", status="proposto", google_place_id="g1",
+                    ratings={"google": {"voto": 4.2, "recensioni": 37}})
+    empty = analysis_payload(prop, [])
+    assert empty["testi_recensioni_disponibili"] is False
+    pasted = analysis_payload(prop, [], "Ottima posizione ma check-in lento", None, "recensioni")
+    assert pasted["testi_recensioni_disponibili"] is True
+    assert pasted["recensioni_copiate_dal_commerciale"].startswith("Ottima")
+    assert "testo_incollato_dal_commerciale" not in pasted
+
+
+async def _analyzed_without_reviews(repo, n: int = 1) -> list[str]:
+    from app.domain.dedupe import Candidate, fingerprints
+
+    ids = []
+    for i in range(n):
+        candidate = Candidate(name=f"Baita {i}", address=f"Via Baita {i}, Abetone", google_place_id=f"g{i + 1}",
+                              phone=f"+39 333 123 456{i}", ratings={"google": {"voto": 4.2, "recensioni": 37}})
+        pid = await repo.insert_property(candidate, fingerprints(candidate), cell="980_170", provincia="047",
+                                         zone="Pistoia", query="b&b")
+        prop = await repo.get_property(pid)
+        await repo.update_property(
+            prop.id, status="analizzato", score=55 + i, analysis={**analysis_data(55 + i),
+            "recensioni": {**analysis_data()["recensioni"], "lette": 0}},
+        )
+        ids.append(prop.id)
+    return ids
+
+
+async def test_scheda_singola_non_letta_se_non_si_sa_che_funziona():
+    repo, _ = await make_repo(google_monthly_requests=1400, min_score=50, searches_per_run=0)
+    await _analyzed_without_reviews(repo)
+    places = FakePlaces([google_place("g1", "Baita")])
+    service, notifier = make_round(repo, places, FakeAnthropic(analysis=analysis_data(80)), price=None)
+    report = await service.run("prova")
+    assert places.details_calls == 0 and report.proposed == 1 and report.reanalyzed == 0
+
+
+async def test_scheda_singola_letta_per_le_candidate_se_funziona():
+    repo, _ = await make_repo(google_monthly_requests=1400, min_score=50, searches_per_run=0)
+    await _analyzed_without_reviews(repo)
+    run = await repo.start_search_run(zone="", query="prova recensioni", cell=None, provincia=None)
+    await repo.finish_search_run(run, status="completata", results=1, new=0, known=1, excluded=0, pages=1,
+                                 cost_eur=Decimal(0), reviews_raw=5, reviews_text=5)
+    places = FakePlaces([google_place("g1", "Baita")])
+    fake = FakeAnthropic(analysis=analysis_data(80))
+    service, notifier = make_round(repo, places, fake, price=None)
+    report = await service.run("prova")
+    assert places.details_calls == 1 and report.reanalyzed == 1 and report.proposed == 1
+    assert report.details_reviews == 1 and report.google_requests == 2  # prova + lettura
+    prompts = [json.dumps(r["messages"], ensure_ascii=False) for r in fake.requests]
+    assert any("check-in in ritardo" in p for p in prompts)
+    assert "schede singole lette: 1" in notifier.summaries[0]
+
+
+async def test_scheda_singola_rispetta_il_tetto_e_si_ferma_se_non_arrivano():
+    repo, _ = await make_repo(google_monthly_requests=2, min_score=50, searches_per_run=0)
+    await _analyzed_without_reviews(repo, 3)
+    run = await repo.start_search_run(zone="", query="prova recensioni", cell=None, provincia=None)
+    await repo.finish_search_run(run, status="completata", results=1, new=0, known=1, excluded=0, pages=1,
+                                 cost_eur=Decimal(0), reviews_raw=5, reviews_text=5)
+    found = []
+    for i in range(3):
+        place = google_place(f"g{i + 1}", f"Baita {i}")
+        place["reviews"] = []
+        found.append(place)
+    places = FakePlaces(found)
+    service, _ = make_round(repo, places, FakeAnthropic(analysis=analysis_data(80)), price=None)
+    report = await service.run("prova")
+    # 1 richiesta già usata dalla prova, tetto 2: una sola lettura, poi niente
+    assert places.details_calls == 1 and report.google_requests == 2 and report.proposed == 3
+
+
+@pytest.mark.parametrize(
+    ("reviews", "outcome", "text"),
+    [
+        (None, "recensioni", "Google manda le recensioni"),
+        ([], "nessuna", "non manda le recensioni nemmeno qui"),
+        ([{"rating": 5}], "senza_testo", "senza testo"),
+    ],
+)
+async def test_prova_della_scheda_singola(reviews, outcome, text):
+    from app.bot.leads import format_details_test
+
+    repo, _ = await make_repo(google_monthly_requests=1400)
+    await _analyzed_without_reviews(repo)
+    place = google_place("g1", "Baita")
+    if reviews is not None:
+        place["reviews"] = reviews
+    places = FakePlaces([place])
+    service, _ = make_round(repo, places, FakeAnthropic(), price=None)
+    result = await service.test_details()
+    assert result.outcome == outcome and places.details_calls == 1 and result.used == 1
+    assert text in format_details_test(result) and "1 su 1400" in format_details_test(result)
+    run = next(iter(repo.search_runs.values()))
+    assert run["query"] == "prova recensioni" and run["pages"] == 1
+    assert await service.details_available() is (outcome == "recensioni")
+
+
+async def test_prova_della_scheda_singola_senza_richieste_rimaste():
+    repo, _ = await make_repo(google_monthly_requests=1)
+    await _analyzed_without_reviews(repo)
+    run = await repo.start_search_run(zone="", query="casa vacanze", cell="1_1", provincia="047")
+    await repo.finish_search_run(run, status="completata", results=0, new=0, known=0, excluded=0, pages=1,
+                                 cost_eur=Decimal(0))
+    places = FakePlaces([google_place("g1", "Baita")])
+    service, _ = make_round(repo, places, FakeAnthropic(), price=None)
+    assert (await service.test_details()).outcome == "limite" and places.details_calls == 0
+
+
+async def test_recensioni_incollate_sulla_scheda():
+    world, pid, _ = await _world_with_card()
+    fake = FakeAnthropic(analysis=analysis_data(85))
+    ai = ClaudeJSON(world.repo, fake, model="claude-opus-5-5", effort="medium", eur_per_usd=Decimal(1), clock=lambda: NOW)
+    world.app.bot_data["analysis"] = AnalysisService(world.repo, ai)
+    world.app.bot_data["messages"] = MessageService(world.repo, ai)
+    created: list = []
+    world.app.create_task = lambda coro, name=None: created.append(coro)
+    user_data: dict = {}
+    await press(world, 1001, f"c:rv:{pid}", user_data)
+    assert user_data["reviews"] == pid and "Recensioni per" in world.bot.sent[-1][1]
+
+    async def send_text(text: str) -> FakeMessage:
+        message = FakeMessage()
+        message.text = text
+        message.chat_id = 1001
+        update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=1001, username="matteo", first_name="M"),
+            effective_chat=SimpleNamespace(id=1001, type="private"),
+            effective_message=message,
+        )
+        await handlers.plain_text(update, SimpleNamespace(application=world.app, bot=world.bot, args=[], user_data=user_data))
+        return message
+
+    short = await send_text("troppo corto")
+    assert "troppo corto" in short.replies[0] and not created
+
+    await press(world, 1001, f"c:rv:{pid}", user_data)
+    pasted = "★★★ Settembre 2026: posizione ottima ma il check-in è stato lento, abbiamo aspettato un'ora. " * 2
+    reply = await send_text(pasted)
+    assert "Rifaccio l'analisi" in reply.replies[0] and "reviews" not in user_data
+    await created.pop()
+    prop = await world.repo.get_property(pid)
+    assert prop.status == "proposto" and prop.score == 85  # stato invariato, punteggio nuovo
+    analysis_prompt = json.dumps(fake.requests[0]["messages"], ensure_ascii=False)
+    assert "recensioni_copiate_dal_commerciale" in analysis_prompt and "check-in è stato lento" in analysis_prompt
+    assert any("segnali_opportunita" not in r["output_config"]["format"]["schema"]["properties"] for r in fake.requests)
+    assert "punteggio 80 → 85" in world.bot.sent[-1][1]
+    events = [e["event_type"] for e in world.repo.events if e["property_id"] == pid]
+    assert "recensioni_aggiunte" in events and "messaggi_scritti" in events
+    assert world.bot.edited  # scheda aggiornata
+
+    await press(world, 1001, f"c:rv:{pid}", user_data)
+    message = FakeMessage()
+    update = SimpleNamespace(effective_message=message, effective_user=SimpleNamespace(id=1001), effective_chat=None)
+    await handlers.annulla(update, SimpleNamespace(application=world.app, bot=world.bot, args=[], user_data=user_data))
+    assert message.replies == ["Modifica annullata."] and "reviews" not in user_data

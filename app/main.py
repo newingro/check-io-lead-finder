@@ -145,6 +145,7 @@ def build_application(config: Config) -> Application:
         )
         app.job_queue.run_repeating(leads.tick, interval=30, first=10)
         app.create_task(leads.startup_key_check(app), name="verifica-chiavi")
+        app.create_task(leads.startup_details_test(app), name="prova-recensioni")
         if await repo.count_linked_owners() == 0:
             log.warning("Nessun titolare collegato: usa /collega con OWNER_SETUP_CODE.")
         log.info("Bot avviato (@%s).", app.bot.username)

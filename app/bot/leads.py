@@ -22,7 +22,7 @@ from app.integrations.website import _CIN
 from app.services.analysis import AnalysisService
 from app.services.keycheck import check_anthropic, check_google, format_statuses, google_mode
 from app.services.messages import MessageService
-from app.services.rounds import RoundService
+from app.services.rounds import DetailsTest, RoundService
 
 from . import cards
 
@@ -30,6 +30,13 @@ log = logging.getLogger(__name__)
 
 URL = re.compile(r"https?://\S+", re.IGNORECASE)
 MIN_PASTED_CHARS = 150
+MIN_REVIEWS_CHARS = 80
+REVIEWS_PROMPT = (
+    "📝 Recensioni per «{name}»\n"
+    "Apri la scheda su Google Maps (il link è nella scheda), copia 3-5 recensioni (testo, voto e data se ci sono) "
+    "e incollale qui in un unico messaggio, senza i nomi di chi le ha scritte.\n"
+    "Rifaccio l'analisi e riscrivo i messaggi. Per lasciar perdere: /annulla"
+)
 PURGE_TIME = "03:15"
 
 
@@ -296,7 +303,17 @@ async def card_button(update: Update, context: ContextTypes.DEFAULT_TYPE, member
             query.message.chat_id, f"Cosa vuoi modificare di «{prop.name}»?", reply_markup=cards.edit_choice_keyboard(prop)
         )
         return
+    if action == "rv":
+        if prop.status not in ACTIVE:
+            await query.answer("Questa scheda è già chiusa.", show_alert=True)
+            return
+        context.user_data.pop("edit", None)
+        context.user_data["reviews"] = prop.id
+        await query.answer()
+        await context.bot.send_message(query.message.chat_id, REVIEWS_PROMPT.format(name=prop.name))
+        return
     if action in ("ew", "ee"):
+        context.user_data.pop("reviews", None)
         context.user_data["edit"] = {"property_id": prop.id, "channel": "whatsapp" if action == "ew" else "email"}
         await query.answer()
         what = "del messaggio WhatsApp" if action == "ew" else "dell'email (solo il corpo, l'oggetto resta)"
@@ -331,7 +348,11 @@ async def card_button(update: Update, context: ContextTypes.DEFAULT_TYPE, member
 
 # ── Modifica dei testi ───────────────────────────────────────
 async def save_edit(update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder) -> bool:
-    """Se c'è una modifica in sospeso salva il testo e restituisce True."""
+    """Se c'è una modifica (o un incolla di recensioni) in sospeso la gestisce e restituisce True."""
+    pending_reviews = context.user_data.pop("reviews", None)
+    if pending_reviews:
+        await start_reviews(update, context, member, pending_reviews)
+        return True
     pending = context.user_data.get("edit")
     if not pending:
         return False
@@ -362,8 +383,83 @@ async def save_edit(update: Update, context: ContextTypes.DEFAULT_TYPE, member: 
 
 
 async def annulla(update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder) -> None:
-    had = context.user_data.pop("edit", None)
-    await update.effective_message.reply_text("Modifica annullata." if had else "Nessuna modifica in corso.")
+    had_edit = context.user_data.pop("edit", None)
+    had_reviews = context.user_data.pop("reviews", None)
+    await update.effective_message.reply_text(
+        "Modifica annullata." if had_edit or had_reviews else "Nessuna modifica in corso."
+    )
+
+
+# ── Recensioni incollate dal commerciale ─────────────────────
+async def start_reviews(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder, property_id: str
+) -> None:
+    message = update.effective_message
+    data = deps(context)
+    repo: Repository = data["repo"]
+    text = (message.text or "").strip()
+    prop = await repo.get_property(property_id)
+    if prop is None or prop.status not in ACTIVE:
+        await message.reply_text("La scheda è già chiusa: recensioni non usate.")
+        return
+    if not member.is_owner and prop.assigned_to != member.id:
+        await message.reply_text("Questa scheda è assegnata a un'altra persona.")
+        return
+    if data.get("analysis") is None or data.get("messages") is None:
+        await message.reply_text("Analisi AI non attiva: manca ANTHROPIC_API_KEY sul server.")
+        return
+    if len(text) < MIN_REVIEWS_CHARS:
+        await message.reply_text(
+            "Testo troppo corto: incolla almeno una recensione intera. Riprova dal pulsante «📝 Recensioni»."
+        )
+        return
+    await message.reply_text("🧠 Rifaccio l'analisi con le recensioni: ti aggiorno la scheda tra poco.")
+    context.application.create_task(apply_reviews(context, member, prop.id, text, message.chat_id))
+
+
+async def apply_reviews(
+    context: ContextTypes.DEFAULT_TYPE, member: LeadFinder, property_id: str, text: str, chat_id: int
+) -> None:
+    data = deps(context)
+    repo: Repository = data["repo"]
+    analysis: AnalysisService = data["analysis"]
+    messages: MessageService = data["messages"]
+    prop = await repo.get_property(property_id)
+    if prop is None:
+        return
+    before, previous_status = prop.score, prop.status
+    try:
+        prop = await analysis.analyze(prop, [], pasted_text=text, pasted_kind="recensioni", require_contacts=False)
+        await repo.add_property_event(
+            prop.id, actor_id=member.id, actor_label=member.name, source="telegram", event_type="recensioni_aggiunte",
+            details={"punteggio_prima": before, "punteggio_dopo": prop.score},
+        )
+        if prop.status == "scartato":
+            why = ((prop.analysis or {}).get("esclusione") or {}).get("spiegazione") or prop.discard_reason
+            await _refresh_card(context, prop, f"❌ Esclusa dopo le recensioni: {why}")
+            await context.bot.send_message(chat_id, f"❌ «{prop.name}» esclusa dopo le recensioni: {why}")
+            return
+        await repo.update_property(prop.id, status=previous_status)
+        if prop.status != "analizzato":  # analisi non riuscita: la scheda resta com'era
+            await context.bot.send_message(chat_id, "⚠️ Analisi non riuscita: la scheda resta com'era. Riprova tra poco.")
+            return
+        sender = (await member_names(repo)).get(prop.assigned_to or "") or member.name
+        prop = await repo.get_property(prop.id) or prop
+        await messages.write(prop, sender, variant=prop.message_variant)
+        prop = await repo.get_property(prop.id) or prop
+        await _refresh_card(context, prop)
+        await context.bot.send_message(
+            chat_id,
+            f"✅ Analisi di «{prop.name}» aggiornata con le recensioni: punteggio {before} → {prop.score}. "
+            "Messaggi riscritti: li trovi nella scheda.",
+        )
+    except BudgetExceeded as exc:
+        await repo.update_property(property_id, status=previous_status)
+        await context.bot.send_message(chat_id, f"⚠️ {exc}")
+    except (AIError, TelegramError) as exc:
+        log.warning("Recensioni incollate non usate: %s", exc)
+        await repo.update_property(property_id, status=previous_status)
+        await context.bot.send_message(chat_id, "⚠️ Non sono riuscito ad aggiornare la scheda. Riprova tra poco.")
 
 
 
@@ -394,6 +490,67 @@ async def startup_key_check(app: Any) -> None:
         log.exception("Verifica delle chiavi non riuscita")
 
 
+def format_details_test(t: DetailsTest) -> str:
+    usage = f"\nRichieste Google del mese: {t.used} su {t.limit}." if t.limit else ""
+    if t.outcome == "recensioni":
+        return (
+            f"✅ Prova della scheda singola (1 richiesta): Google manda le recensioni. Per «{t.name}» ne sono "
+            f"arrivate {t.text} con testo.\nDa ora, prima di mandare una scheda, il bot legge le recensioni della "
+            "struttura (1 richiesta ciascuna, dentro il tetto del mese) e rifà l'analisi." + usage
+        )
+    if t.outcome == "senza_testo":
+        return (
+            f"⚠️ Prova della scheda singola (1 richiesta): per «{t.name}» Google manda {t.raw} recensioni ma senza "
+            "testo, quindi non servono all'analisi. Il bot non legge le schede singole. Per le strutture migliori "
+            "potete incollare le recensioni col pulsante «📝 Recensioni» sulla scheda." + usage
+        )
+    if t.outcome == "nessuna":
+        return (
+            f"❌ Prova della scheda singola (1 richiesta): Google non manda le recensioni nemmeno qui (provato su "
+            f"«{t.name}», che su Google ne ha {t.ratings}).\nIl bot continua senza: punteggio su voto, numero di "
+            "recensioni, canali e sito. Per le strutture migliori potete incollarle voi col pulsante "
+            "«📝 Recensioni» sulla scheda." + usage
+        )
+    if t.outcome == "errore":
+        return f"❌ Prova non riuscita: Google ha risposto con un errore ({t.error}). Riprova con /verifica recensioni."
+    if t.outcome == "limite":
+        return f"➖ Richieste Google del mese finite ({t.used} su {t.limit}): nessuna prova fatta."
+    if t.outcome == "nessuna_struttura":
+        return "➖ Nessuna struttura in memoria con recensioni su Google: la prova si fa dopo il primo giro."
+    if t.outcome == "giro_in_corso":
+        return "⏳ C'è un giro in corso: riprova /verifica recensioni quando è finito."
+    return "➖ Ricerca Google spenta: nessuna prova fatta."
+
+
+async def run_details_test(app: Any) -> str:
+    rounds: RoundService | None = app.bot_data.get("rounds")
+    if rounds is None:
+        return "➖ I giri non sono attivi su questo server: nessuna prova fatta."
+    result = await rounds.test_details()
+    if result.outcome in ("recensioni", "senza_testo", "nessuna", "errore"):
+        await app.bot_data["repo"].add_audit(
+            None, "bot", "bot", "prova_recensioni",
+            {"esito": result.outcome, "struttura": result.name, "recensioni": result.raw, "con_testo": result.text},
+        )
+    return format_details_test(result)
+
+
+async def startup_details_test(app: Any) -> None:
+    """Una volta sola: se non c'è ancora nessuna lettura di schede singole, prova con 1 richiesta."""
+    try:
+        rounds: RoundService | None = app.bot_data.get("rounds")
+        if rounds is None or rounds.places is None or await app.bot_data["repo"].recent_details_runs(1):
+            return
+        text = await run_details_test(app)
+        await TelegramNotifier(app.bot, app.bot_data["repo"]).notify_owners(text)
+    except Exception:  # noqa: BLE001 - la prova non deve fermare il bot
+        log.exception("Prova delle recensioni non riuscita")
+
+
 async def verifica(update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder) -> None:
+    if context.args and context.args[0].casefold().startswith("recension"):
+        await update.effective_message.reply_text("🔎 Provo la scheda singola di Google (1 richiesta)…")
+        await update.effective_message.reply_text(await run_details_test(context.application))
+        return
     await update.effective_message.reply_text("🔑 Verifico le chiavi (senza spendere)…")
     await update.effective_message.reply_text(await run_key_check(context.application))

@@ -262,6 +262,15 @@ async def test_strutture_costi_e_schede_sul_database(repo):
     assert await repository.month_costs(since) == (Decimal("0.0400"), Decimal("0.01400"))
     assert await repository.month_google_requests(since) == 1
     assert (await repository.get_settings()).google_monthly_requests == 0
+    assert await repository.recent_details_runs(5) == []  # le ricerche normali non contano
+    for query, text in (("prova recensioni", 0), ("dettagli scheda", 3)):
+        details = await repository.start_search_run(zone="", query=query, cell=None, provincia=None)
+        await repository.finish_search_run(
+            details, status="completata", results=1, new=0, known=1, excluded=0, pages=1, cost_eur=Decimal(0),
+            reviews_raw=5, reviews_text=text,
+        )
+    assert await repository.recent_details_runs(5) == [3, 0]  # dalla più recente
+    assert await repository.month_google_requests(since) == 3
 
     candidate = Candidate(name="Baita", address="Via Baita 1, Abetone", google_place_id="g1", phone="333 1234567")
     pid = await repository.insert_property(candidate, fingerprints(candidate), cell="980_170", provincia="047",

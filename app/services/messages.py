@@ -66,7 +66,10 @@ class MessageService:
             schema=MESSAGE_SCHEMA, property_id=prop.id,
         )
         messages = result.data
-        problems = check_messages(messages, sender=sender, allowed=allowed)
+        reviews_read = ((prop.analysis or {}).get("recensioni") or {}).get("lette")
+        rules = {"sender": sender, "allowed": allowed, "variant": variant,
+                 "reviews_read": reviews_read if isinstance(reviews_read, int) else None}
+        problems = check_messages(messages, **rules)
         cost = result.cost_eur
         if problems:
             retry_prompt = (
@@ -80,7 +83,7 @@ class MessageService:
                     schema=MESSAGE_SCHEMA, property_id=prop.id,
                 )
                 cost += retry.cost_eur
-                retry_problems = check_messages(retry.data, sender=sender, allowed=allowed)
+                retry_problems = check_messages(retry.data, **rules)
                 if len(retry_problems) <= len(problems):
                     messages, problems = retry.data, retry_problems
             except AIError:
