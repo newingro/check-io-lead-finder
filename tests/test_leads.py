@@ -326,7 +326,8 @@ def test_istruzioni_contengono_i_fatti_confermati_e_le_regole():
     assert "niente di inventato" in system and "Octorate" in system and "al massimo 5 recensioni" in system
     msg = message_system("B", SENDER)
     assert "chiacchierata di 10 minuti" in msg and SENDER in msg and "Vietato" in msg
-    assert "come dire no" in msg and "Google Maps" in msg
+    assert "come dire no" in msg.lower() and "Google Maps" in msg
+    assert "1. Presentazione" in msg and "2. La sua struttura" in msg  # prima chi siamo, poi la struttura
     for schema in (ANALYSIS_SCHEMA, MESSAGE_SCHEMA):
         stack = [schema]
         while stack:  # ogni oggetto ha additionalProperties false e tutti i campi obbligatori
@@ -425,22 +426,25 @@ async def test_giro_completo_ricerca_analisi_schede_e_riepilogo():
     service, notifier = make_round(repo, places, fake)
     report = await service.run("prova")
     assert report.searches == 1 and report.pages == 1 and report.results == 3
-    assert report.new == 2 and report.excluded == 1 and report.analyzed == 2 and report.proposed == 2
+    # il Rifugio ha solo un fisso: scartato prima dell'analisi (niente WhatsApp, niente spesa AI)
+    assert report.new == 2 and report.excluded == 1 and report.analyzed == 1 and report.discarded == 1
+    assert report.proposed == 1
     assert report.search_cost == Decimal("0.04")  # 1 pagina × 40 $ / 1000
-    assert len(notifier.cards) == 2 and all(name == SENDER for name, _ in notifier.cards)
-    statuses = {r["name"]: r["status"] for r in repo.properties.values()}
-    assert statuses == {"Baita": "proposto", "Rifugio": "proposto"}
-    assert all(r["telegram_message_id"] for r in repo.properties.values())
+    assert len(notifier.cards) == 1 and all(name == SENDER for name, _ in notifier.cards)
+    statuses = {r["name"]: (r["status"], r.get("discard_reason")) for r in repo.properties.values()}
+    assert statuses == {"Baita": ("proposto", None), "Rifugio": ("scartato", "senza_cellulare")}
+    assert all(r["telegram_message_id"] for r in repo.properties.values() if r["status"] == "proposto")
+    assert sum("segnali_opportunita" in r["output_config"]["format"]["schema"]["properties"] for r in fake.requests) == 1
     assert "Mario Rossi" not in json.dumps([r["messages"] for r in fake.requests])
     run = next(iter(repo.search_runs.values()))
     assert run["status"] == "completata" and run["cost_eur"] == Decimal("0.04") and run["excluded"] == 1
     summary = notifier.summaries[0]
-    assert "Ricerche Google: 1" in summary and "nuove 2" in summary and "Schede inviate 2" in summary
+    assert "Ricerche Google: 1" in summary and "nuove 2" in summary and "Schede inviate 1" in summary
     assert "0,04 €" in summary
 
     # Secondo giro con gli stessi risultati: niente di nuovo, l'hotel resta escluso, nessuna nuova scheda
     report2 = await service.run("prova")
-    assert report2.new == 0 and report2.known == 2 and report2.proposed == 0 and len(notifier.cards) == 2
+    assert report2.new == 0 and report2.known == 2 and report2.proposed == 0 and len(notifier.cards) == 1
 
 
 async def test_giro_senza_prezzo_senza_chiavi_e_tetto_ricerche():
@@ -487,8 +491,12 @@ def test_turni_e_canali():
     assert on_shift({"lun": [["09:00", "17:00"]]}, monday_10)
     assert not on_shift({"lun": [["09:00", "17:00"]]}, monday_10.replace(hour=17))
     assert not on_shift({"mar": [["09:00", "17:00"]]}, monday_10)
-    p = Property(id="x", name="X", phone_normalized=None, email_normalized="a@b.it")
-    assert contactable(p, "messaggi") and not contactable(p, "telefonate")
+    # per ora solo cellulari italiani (WhatsApp), in ogni modalità
+    only_email = Property(id="x", name="X", phone_normalized=None, email_normalized="a@b.it")
+    landline = Property(id="y", name="Y", phone_normalized="+39055284528")
+    mobile = Property(id="z", name="Z", phone_normalized="+393331234567")
+    for mode in ("messaggi", "telefonate", "misto"):
+        assert not contactable(only_email, mode) and not contactable(landline, mode) and contactable(mobile, mode)
 
 
 # ── Scheda Telegram ──────────────────────────────────────────
@@ -892,9 +900,9 @@ def test_numero_ufficiale_nella_firma_e_nei_fatti():
 
 async def test_le_recensioni_arrivano_all_analisi_e_si_contano():
     repo, _ = await make_repo(google_monthly_requests=1400)
-    no_text = google_place("g2", "Rifugio", phone="+39 0573 123456")
+    no_text = google_place("g2", "Rifugio", phone="+39 340 123 4567")
     no_text["reviews"] = [{"rating": 5, "publishTime": "2026-10-01T10:00:00Z"}]  # solo voto, senza testo
-    without = google_place("g3", "Chalet", phone="+39 0573 654321")
+    without = google_place("g3", "Chalet", phone="+39 347 765 4321")
     del without["reviews"]  # Google non manda il campo
     fake = FakeAnthropic()
     service, notifier = make_round(repo, FakePlaces([google_place("g1", "Baita"), no_text, without]), fake, price=None)
@@ -1114,3 +1122,23 @@ async def test_recensioni_incollate_sulla_scheda():
     update = SimpleNamespace(effective_message=message, effective_user=SimpleNamespace(id=1001), effective_chat=None)
     await handlers.annulla(update, SimpleNamespace(application=world.app, bot=world.bot, args=[], user_data=user_data))
     assert message.replies == ["Modifica annullata."] and "reviews" not in user_data
+
+
+
+def test_cellulare_o_fisso():
+    from app.domain.dedupe import is_mobile, normalize_phone
+
+    assert is_mobile(normalize_phone("340 067 0607")) and is_mobile(normalize_phone("+39 339 332 4877"))
+    assert not is_mobile(normalize_phone("055 284528")) and not is_mobile(normalize_phone("+39 039 5883 3050"))
+    assert not is_mobile(None) and not is_mobile("+41791234567")
+
+
+async def test_analisi_scartata_senza_cellulare_senza_spendere():
+    repo, _ = await make_repo()
+    fake = FakeAnthropic()
+    ai = ClaudeJSON(repo, fake, model="claude-opus-5-5", effort="medium", eur_per_usd=Decimal(1), clock=lambda: NOW)
+    prop = await _new_property(repo, phone="+39 0573 123456")
+    result = await AnalysisService(repo, ai).analyze(prop, [])
+    assert result.status == "scartato" and result.discard_reason == "senza_cellulare" and fake.requests == []
+    card = cards.card_text(_card_property(), "messaggi")
+    assert "📱 +39 333 123 4567" in card

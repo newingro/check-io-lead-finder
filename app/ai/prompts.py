@@ -189,27 +189,32 @@ VARIANTS = {
 MESSAGE_SYSTEM = """Scrivi il primo contatto di CHECK-iO al proprietario di una struttura in affitto breve.
 Obiettivo: far rispondere il proprietario, non vendergli tutto subito.
 
+Il canale principale è WhatsApp (il proprietario ha un cellulare). WhatsApp ed email seguono questo ordine:
+1. Presentazione: saluto, chi scrive e chi siamo (CHECK-iO, gestione di affitti brevi, check-io.it) e cosa
+   facciamo, in una o due frasi concrete prese dai servizi confermati (annunci su più portali e prezzi
+   aggiornati, check-in e self check-in con persona sul posto anche la sera, assistenza agli ospiti 24/7,
+   pulizie e biancheria, adempimenti come Alloggiati Web, tassa di soggiorno, ISTAT e CIN).
+2. La sua struttura: come l'abbiamo trovata (la sua scheda su Google Maps) e cosa abbiamo visto, con dati veri
+   dell'analisi: voto e numero di recensioni; se ci sono recensioni lette, i problemi che emergono (temi
+   negativi, con quante volte su quante lette) e cosa apprezzano gli ospiti; se non ci sono recensioni lette,
+   i segnali della scheda e del sito (poche recensioni, presente solo su Google, nessun sito, pochi portali).
+   Riporta in dettaglio_usato i fatti che hai usato.
+3. Come CHECK-iO risolverebbe proprio quei punti, in una frase (check-in: self check-in o persona sul posto
+   anche la sera; pulizia: squadra e controlli; comunicazione: assistenza 24/7; visibilità e occupazione: più
+   portali e prezzi aggiornati) e un vantaggio per lui (tempo libero, recensioni migliori, più prenotazioni).
+4. {variante}
+5. Come dire no, con una frase semplice: se preferisce non essere ricontattato basta scriverlo e non lo
+   ricontatteremo.
+6. Firma con il nome di chi scrive: {mittente}.
+
 Regole (obbligatorie):
-- Apertura personale e concreta con UN dettaglio vero e verificabile preso dall'analisi (es. "ho visto la sua
-  struttura su Google Maps: gli ospiti lodano la posizione, ma in 2 delle 5 recensioni che ho letto parlano di
-  attese al check-in"). Riporta in dettaglio_usato il fatto che hai usato.
-- Il problema detto con rispetto: mai criticare il proprietario, mai citare frasi o nomi di ospiti, mai toni
-  allarmistici.
-- Come lo risolve CHECK-iO, in una frase collegata a quel problema (check-in: self check-in o persona sul
-  posto anche la sera; pulizia: squadra e controlli; comunicazione: assistenza agli ospiti 24/7; occupazione:
-  più portali e prezzi aggiornati).
-- Un vantaggio per lui: tempo libero, recensioni migliori, più prenotazioni, adempimenti (Alloggiati Web,
-  tassa di soggiorno, ISTAT, CIN) gestiti da noi. Nessun guadagno garantito.
-- In ogni messaggio scritto (WhatsApp ed email): chi siamo (CHECK-iO, gestione di affitti brevi, check-io.it),
-  perché lo contattiamo, come l'abbiamo trovato (la sua scheda su Google Maps) e come dire no (una frase
-  semplice: se preferisce non essere ricontattato basta scriverlo e non lo ricontatteremo).
-- {variante}
+- I problemi si dicono con rispetto: mai criticare il proprietario, mai citare frasi o nomi di ospiti, mai toni
+  allarmistici. Un voto basso non è una critica: presentalo come un punto da cui partire.
 - Una sola proposta per messaggio: nella versione A (analisi gratuita) non proporre telefonate e non citare i
   "10 minuti"; nella versione B (chiacchierata di 10 minuti) non proporre l'analisi gratuita.
-- Se recensioni_lette è 0 non hai letto recensioni: non dirlo e non citare problemi degli ospiti. Come dettaglio
-  vero usa un fatto della scheda o del sito (voto e numero di recensioni, presenza solo su Google, nessun sito,
-  pochi canali). Un voto basso non è una critica: presentalo come un punto da cui partire, con rispetto.
-- Chiusura con una domanda semplice e il nome di chi scrive: {mittente}.
+- Se recensioni_lette è 0 non hai letto recensioni: non dirlo e non citare problemi degli ospiti; usa solo voto,
+  numero di recensioni e i segnali della scheda e del sito.
+- Nessun guadagno garantito.
 - Dai del "lei".
 
 Vietato: numeri inventati, percentuali, prezzi, commissioni nei messaggi scritti, promesse di guadagno,
@@ -219,10 +224,11 @@ Puoi usare solo numeri presenti nei dati della struttura (voto, recensioni, cont
 "10 minuti" (solo nella versione B), "24/7".
 
 Lunghezza:
-- whatsapp: 4-6 righe brevi, senza emoji in eccesso.
-- email: oggetto breve (massimo 8 parole) + corpo di 6-10 righe, con saluto e firma ({mittente}, CHECK-iO,
-  check-io.it, tel. +39 352 255 4502).
-- telefono (scheda per la telefonata, la legge chi chiama): frase d'apertura, 2 domande, e le risposte alle
+- whatsapp: 6-8 righe brevi (una riga per ogni punto dell'ordine sopra), senza emoji in eccesso.
+- email: oggetto breve (massimo 8 parole) + corpo di 8-12 righe nello stesso ordine, con saluto e firma
+  ({mittente}, CHECK-iO, check-io.it, tel. +39 352 255 4502).
+- telefono (scheda per la telefonata, la legge chi chiama): frase d'apertura (chi siamo, cosa facciamo e perché
+  chiamiamo proprio lui), 2 domande, e le risposte alle
   obiezioni tipiche: ci_penso_io ("ci penso io"), ho_gia_provato_agenzia, non_voglio_dare_le_chiavi,
   quanto_costa. Solo al telefono si può dire che la commissione è indicativa tra il 10 e il 15%, definita per
   immobile, con pulizie e biancheria a carico del proprietario a parte.

@@ -42,6 +42,14 @@ class Candidate:
     listing_urls: dict[str, str] = field(default_factory=dict)
 
 
+MOBILE_IT = re.compile(r"^\+393\d{8,9}$")
+
+
+def is_mobile(phone_normalized: str | None) -> bool:
+    """Cellulare italiano (+39 3…): l'unico su cui si può scrivere su WhatsApp. I fissi iniziano con +39 0."""
+    return bool(phone_normalized and MOBILE_IT.match(phone_normalized))
+
+
 def normalize_phone(raw: str | None) -> str | None:
     """Numero in formato +39…; None se non sembra un numero di telefono."""
     if not raw:

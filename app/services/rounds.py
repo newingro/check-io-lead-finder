@@ -26,7 +26,7 @@ import httpx
 
 from app.ai.client import AIError, BudgetExceeded, month_start
 from app.db.repository import Repository
-from app.domain.dedupe import Candidate, fingerprints, normalize_email
+from app.domain.dedupe import Candidate, fingerprints, is_mobile, normalize_email
 from app.domain.models import LeadFinder, Property
 from app.domain.shifts import on_shift
 from app.integrations.google_places import MAX_PAGES, FoundPlace, PlacesClient, PlacesError
@@ -168,9 +168,8 @@ def wants_details(prop: Property) -> bool:
 
 
 def contactable(prop: Property, mode: str) -> bool:
-    if mode == "telefonate":
-        return bool(prop.phone_normalized)
-    return bool(prop.phone_normalized or prop.email_normalized)
+    """Per ora le schede partono solo per chi ha un cellulare (WhatsApp), in ogni modalità."""
+    return is_mobile(prop.phone_normalized)
 
 
 class RoundService:
@@ -473,7 +472,7 @@ class RoundService:
     ) -> None:
         """Schede a chi è di turno. Con `budget` (la scheda singola manda le recensioni) prima di scrivere
         i messaggi si leggono le recensioni della candidata e si rifà l'analisi."""
-        candidates = [p for p in await self.repo.proposal_candidates(min_score, limit * 3) if contactable(p, mode)]
+        candidates = [p for p in await self.repo.proposal_candidates(min_score, limit * 10) if contactable(p, mode)]
         if not candidates:
             return
         members = await self.eligible_members(now)

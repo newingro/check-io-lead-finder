@@ -80,6 +80,8 @@ def _written_checks(label: str, text: str, sender: str, allowed: set[str], min_l
         problems.append(f"{label}: {len(lines)} righe (servono {min_lines}-{max_lines})")
     if "check-io" not in lower:
         problems.append(f"{label}: manca chi siamo (CHECK-iO)")
+    elif "check-io" not in " ".join(lines[:2]).lower():
+        problems.append(f"{label}: la presentazione di CHECK-iO va all'inizio")
     if "google" not in lower:
         problems.append(f"{label}: manca come l'abbiamo trovato (Google Maps)")
     if not OPT_OUT.search(text):
@@ -115,7 +117,7 @@ def check_messages(
 ) -> list[str]:
     problems: list[str] = []
     whatsapp = str(messages.get("whatsapp") or "")
-    problems += _written_checks("WhatsApp", whatsapp, sender, allowed, 3, 8)
+    problems += _written_checks("WhatsApp", whatsapp, sender, allowed, 5, 9)
     problems += _variant_checks("WhatsApp", whatsapp, variant, reviews_read)
     email = messages.get("email") or {}
     subject = str(email.get("oggetto") or "")

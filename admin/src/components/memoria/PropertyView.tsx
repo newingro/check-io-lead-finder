@@ -24,6 +24,7 @@ const EVENT_LABELS: Record<string, string> = {
 
 const DISCARD_LABELS: Record<string, string> = {
   senza_contatti: "nessun telefono o email pubblici",
+  senza_cellulare: "nessun cellulare pubblico (solo fisso o email)",
   hotel: "è un hotel",
   gestita_da_altri: "già gestita da un altro property manager",
   fuori_target: "fuori target",

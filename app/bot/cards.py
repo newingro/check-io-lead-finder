@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from app.domain.dedupe import is_mobile
 from app.domain.models import Property
 
 THEME_LABELS = {
@@ -56,7 +57,7 @@ def card_text(prop: Property, mode: str, assignee: str | None = None, status_not
         lines.append(f"⭐ {e(google['voto'])} su Google ({e(google.get('recensioni') or 0)} recensioni)")
     contacts = []
     if prop.phone:
-        contacts.append(f"📞 {e(prop.phone)}")
+        contacts.append(f"{'📱' if is_mobile(prop.phone_normalized) else '📞'} {e(prop.phone)}")
     if prop.email:
         contacts.append(f"✉️ {e(prop.email)}")
     if prop.website:
