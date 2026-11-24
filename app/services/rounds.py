@@ -35,6 +35,9 @@ from app.services.radar import RadarService
 
 log = logging.getLogger(__name__)
 
+# Una ricerca = una sola richiesta a Google (fino a 20 strutture per cella): spesa prevedibile.
+PAGES_PER_SEARCH = 1
+
 
 class Notifier(Protocol):
     async def send_card(self, member: LeadFinder, prop: Property) -> tuple[int, int] | None: ...
@@ -110,6 +113,7 @@ class RoundService:
         eur_per_usd: Decimal,
         timezone: ZoneInfo,
         clock: Callable[[], datetime] | None = None,
+        pages_per_search: int = PAGES_PER_SEARCH,
     ) -> None:
         self.repo = repo
         self.radar = radar
@@ -123,6 +127,7 @@ class RoundService:
         self.timezone = timezone
         self.clock = clock or (lambda: datetime.now(UTC))
         self.lock = asyncio.Lock()
+        self.pages_per_search = max(1, min(MAX_PAGES, pages_per_search))
 
     @property
     def page_cost(self) -> Decimal:
@@ -178,9 +183,9 @@ class RoundService:
                 report.notes.append("Nessuna zona attiva da cercare: impostala dal gestionale (Zone).")
             failures = 0
             for target in targets:
-                max_pages = MAX_PAGES
+                max_pages = self.pages_per_search
                 if limit > 0:
-                    max_pages = min(MAX_PAGES, limit - google_used)
+                    max_pages = min(self.pages_per_search, limit - google_used)
                     if max_pages <= 0:
                         report.notes.append(
                             f"Raggiunte le {limit} richieste Google del mese: ricerche ferme fino al mese prossimo."

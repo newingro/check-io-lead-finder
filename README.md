@@ -111,7 +111,7 @@ cartella e lancia `python -I scripts/build_geo.py CARTELLA` (rigenera mappa, cel
 A ogni giro (orari e giorni dalle impostazioni, solo se i giri non sono in pausa) il bot:
 
 1. **Cerca** su Google Maps (Places API) nelle celle scelte dal radar, con le parole delle impostazioni.
-   Ogni pagina di risultati è una richiesta pagata: costo e risultati finiscono in `search_runs`.
+   Ogni ricerca è una sola richiesta a Google (fino a 20 strutture per cella): richieste e risultati finiscono in `search_runs`.
    Hotel, ostelli, campeggi e strutture chiuse vengono esclusi (si ricorda solo l'impronta).
 2. **Legge il sito proprio** della struttura (mai Booking, Airbnb o Trivago): email pubblica, CIN, portali.
 3. **Analizza** con Claude (JSON strutturato): profilo, recensioni (al massimo 5, quelle che dà Google, senza

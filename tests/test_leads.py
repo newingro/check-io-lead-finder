@@ -197,7 +197,7 @@ async def make_repo(**settings: Any) -> tuple[InMemoryRepository, Any]:
     return repo, member
 
 
-def make_round(repo, places, anthropic=None, price: Decimal | None = Decimal("40"), notifier=None):
+def make_round(repo, places, anthropic=None, price: Decimal | None = Decimal("40"), notifier=None, pages_per_search=1):
     notifier = notifier or FakeNotifier()
     analysis = messages = None
     if anthropic is not None:
@@ -206,7 +206,7 @@ def make_round(repo, places, anthropic=None, price: Decimal | None = Decimal("40
     service = RoundService(
         repo, RadarService(repo), notifier, analysis=analysis, messages=messages, places=places, http=None,
         search_price_usd_per_1000=price, eur_per_usd=Decimal(1), timezone=__import__("zoneinfo").ZoneInfo("Europe/Rome"),
-        clock=lambda: NOW,
+        clock=lambda: NOW, pages_per_search=pages_per_search,
     )
     return service, notifier
 
@@ -448,10 +448,10 @@ async def test_giro_senza_prezzo_senza_chiavi_e_tetto_ricerche():
     assert report.searches == 0 and any("richieste Google al mese" in n for n in report.notes)
     assert any("ANTHROPIC_API_KEY" in n for n in report.notes)
 
-    repo2, _ = await make_repo(monthly_search_budget_eur=Decimal("0.05"))
+    repo2, _ = await make_repo(monthly_search_budget_eur=Decimal("0.03"))
     places = FakePlaces([google_place("g1", "Baita")])
     service2, _ = make_round(repo2, places, FakeAnthropic())
-    report2 = await service2.run("prova")  # 0,04 € × 3 pagine possibili > 0,05 € di tetto
+    report2 = await service2.run("prova")  # una richiesta costa 0,04 € > 0,03 € di tetto
     assert places.calls == [] and any("Tetto di spesa" in n for n in report2.notes)
 
 
@@ -845,7 +845,7 @@ async def test_credito_anthropic_esaurito_messaggio_chiaro():
 async def test_google_gratis_senza_prezzo_conta_le_richieste_e_si_ferma():
     repo, _ = await make_repo(google_monthly_requests=4, searches_per_run=3, search_queries=["casa vacanze", "b&b"])
     places = FakePlaces([google_place("g1", "Baita")], pages=2)
-    service, notifier = make_round(repo, places, FakeAnthropic(), price=None)
+    service, notifier = make_round(repo, places, FakeAnthropic(), price=None, pages_per_search=3)
     report = await service.run("prova")
     # 1ª ricerca: 2 pagine (2/4) · 2ª: al massimo 2 pagine (4/4) · 3ª: ferma
     assert report.searches == 2 and report.pages == 4 and places.max_pages_seen == 2
@@ -861,6 +861,18 @@ async def test_google_gratis_senza_prezzo_conta_le_richieste_e_si_ferma():
 async def test_google_gratis_ultima_ricerca_limitata_alle_richieste_rimaste():
     repo, _ = await make_repo(google_monthly_requests=1)
     places = FakePlaces([google_place("g1", "Baita")], pages=3)
-    service, _ = make_round(repo, places, FakeAnthropic(), price=None)
+    service, _ = make_round(repo, places, FakeAnthropic(), price=None, pages_per_search=3)
     report = await service.run("prova")
     assert places.max_pages_seen == 1 and report.pages == 1 and report.google_requests == 1
+
+
+
+async def test_una_ricerca_una_sola_richiesta_a_google():
+    repo, _ = await make_repo(google_monthly_requests=1400, searches_per_run=15,
+                              search_queries=["casa vacanze", "b&b", "affittacamere"])
+    repo.province = {"047": cells_in_circle(*ABETONE, 10)}
+    places = FakePlaces([google_place("g1", "Baita")], pages=3)
+    service, notifier = make_round(repo, places, FakeAnthropic(), price=None)
+    report = await service.run("prova")
+    assert report.searches == 15 and report.pages == 15 and places.max_pages_seen == 1
+    assert report.google_requests == 15 and "15 su 1400" in notifier.summaries[0]
