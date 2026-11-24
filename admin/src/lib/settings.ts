@@ -14,6 +14,7 @@ export const settingsSchema = z.object({
   search_queries: lines(20, "una ricerca"),
   min_score: z.number().int().min(0).max(100),
   cards_per_run: z.number().int().min(1).max(50),
+  searches_per_run: z.number().int().min(0).max(50),
   run_days: z.array(z.enum(DAYS)).min(1, "Scegli almeno un giorno."),
   run_times: z
     .array(z.string().regex(TIME, "Usa il formato 10:00."))

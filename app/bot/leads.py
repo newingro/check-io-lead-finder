@@ -1,0 +1,332 @@
+"""Telegram per le fasi 2-4: giri, /cerca, /analizza, schede e pulsanti."""
+
+from __future__ import annotations
+
+import logging
+import re
+from datetime import UTC, datetime
+from typing import Any
+
+from telegram import Update
+from telegram.constants import ParseMode
+from telegram.error import BadRequest, Forbidden, TelegramError
+from telegram.ext import ContextTypes
+
+from app.ai.client import AIError, BudgetExceeded
+from app.db.repository import Repository
+from app.domain.dedupe import listing_fingerprints
+from app.domain.models import LeadFinder, Property
+from app.domain.shifts import day_code
+from app.integrations.google_places import platform_of
+from app.integrations.website import _CIN
+from app.services.analysis import AnalysisService
+from app.services.messages import MessageService
+from app.services.rounds import RoundService
+
+from . import cards
+
+log = logging.getLogger(__name__)
+
+URL = re.compile(r"https?://\S+", re.IGNORECASE)
+MIN_PASTED_CHARS = 150
+PURGE_TIME = "03:15"
+
+
+def deps(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
+    return context.application.bot_data
+
+
+async def member_names(repo: Repository) -> dict[str, str]:
+    return {m.id: m.name for m in await repo.list_members()}
+
+
+class TelegramNotifier:
+    """Invia schede e riepiloghi su Telegram."""
+
+    def __init__(self, bot: Any, repo: Repository) -> None:
+        self.bot = bot
+        self.repo = repo
+
+    async def send_card(self, member: LeadFinder, prop: Property) -> tuple[int, int] | None:
+        if not member.telegram_chat_id:
+            return None
+        state = await self.repo.get_state()
+        try:
+            message = await self.bot.send_message(
+                member.telegram_chat_id,
+                cards.card_text(prop, state.mode, member.name),
+                parse_mode=ParseMode.HTML,
+                reply_markup=cards.card_keyboard(prop),
+                disable_web_page_preview=True,
+            )
+        except (Forbidden, TelegramError) as exc:
+            log.warning("Scheda non consegnata a %s: %s", member.id, exc.__class__.__name__)
+            return None
+        return member.telegram_chat_id, message.message_id
+
+    async def notify_owners(self, text: str) -> None:
+        for member in await self.repo.list_members():
+            if member.is_owner and member.is_active and member.telegram_chat_id:
+                try:
+                    await self.bot.send_message(member.telegram_chat_id, text, disable_web_page_preview=True)
+                except TelegramError as exc:
+                    log.warning("Riepilogo non consegnato a %s: %s", member.id, exc.__class__.__name__)
+
+
+# ── Giri programmati ─────────────────────────────────────────
+async def start_round(context: ContextTypes.DEFAULT_TYPE, trigger: str) -> bool:
+    rounds: RoundService | None = deps(context).get("rounds")
+    if rounds is None or rounds.lock.locked():
+        return False
+    context.application.create_task(rounds.run(trigger), name=f"giro-{trigger}")
+    return True
+
+
+async def tick(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Ogni 30 secondi: parte un giro se è l'ora giusta; di notte la pulizia della memoria."""
+    data = deps(context)
+    repo: Repository = data["repo"]
+    now = datetime.now(data["timezone"])
+    hhmm = now.strftime("%H:%M")
+    key = now.strftime("%Y-%m-%d ") + hhmm
+    try:
+        if hhmm == PURGE_TIME and data.get("last_purge") != now.date():
+            data["last_purge"] = now.date()
+            removed = await repo.purge_expired()
+            if removed:
+                log.info("Pulizia della memoria: %s strutture cancellate (restano le impronte).", removed)
+        settings = await repo.get_settings()
+        if hhmm not in settings.run_times or day_code(now) not in settings.run_days or data.get("last_round") == key:
+            return
+        data["last_round"] = key
+        state = await repo.get_state()
+        if state.paused:
+            return
+        await start_round(context, "programmato")
+    except Exception:  # noqa: BLE001 - si riprova al prossimo controllo
+        log.exception("Controllo dei giri non riuscito")
+
+
+async def cerca(update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder) -> None:
+    if deps(context).get("rounds") is None:
+        await update.effective_message.reply_text("I giri non sono attivi su questo server.")
+        return
+    if await start_round(context, f"avviato da {member.name}"):
+        await update.effective_message.reply_text(
+            "🛰 Giro avviato. Ti mando il riepilogo alla fine (di solito pochi minuti); "
+            "le schede arrivano a chi è di turno."
+        )
+    else:
+        await update.effective_message.reply_text("C'è già un giro in corso: aspetta il riepilogo.")
+
+
+# ── /analizza ────────────────────────────────────────────────
+ANALIZZA_USAGE = (
+    "Incolla il link dell'annuncio e, sotto, il testo dell'annuncio o delle recensioni (copia e incolla dalla pagina). "
+    "Il bot non apre Booking, Airbnb o Trivago: lavora solo su quello che incolli.\n\n"
+    "Esempio:\n/analizza https://www.booking.com/hotel/it/esempio.html\nTesto dell'annuncio e recensioni…"
+)
+
+
+async def analizza(update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder) -> None:
+    message = update.effective_message
+    data = deps(context)
+    analysis: AnalysisService | None = data.get("analysis")
+    if analysis is None:
+        await message.reply_text("Analisi AI non attiva: manca ANTHROPIC_API_KEY sul server.")
+        return
+    raw = (message.text or "").split(maxsplit=1)
+    body = raw[1] if len(raw) > 1 else ""
+    links = URL.findall(body)
+    link = links[0].rstrip(").,;") if links else None
+    text = URL.sub(" ", body).strip()
+    if len(text) < MIN_PASTED_CHARS:
+        await message.reply_text(ANALIZZA_USAGE)
+        return
+    cin_match = _CIN.search(text)
+    cin = re.sub(r"\s", "", cin_match.group(0)).upper() if cin_match else None
+    portal = platform_of(link) or "annuncio"
+    prints = listing_fingerprints(link, cin)
+    repo: Repository = data["repo"]
+    if prints:
+        property_id = await repo.insert_manual_property(
+            f"Annuncio {portal}", {portal: link} if link else {}, prints, cin, member.id
+        )
+        if property_id is None:
+            await message.reply_text("Questa struttura è già in memoria (stesso link o stesso CIN): non la ripropongo.")
+            return
+    else:
+        property_id = await repo.insert_manual_property(f"Annuncio {portal}", {}, [], None, member.id)
+    await message.reply_text("🧠 Analisi in corso: ti mando la scheda tra poco.")
+    context.application.create_task(_run_pasted(context, member, property_id, text, link))
+
+
+async def _run_pasted(
+    context: ContextTypes.DEFAULT_TYPE, member: LeadFinder, property_id: str, text: str, link: str | None
+) -> None:
+    data = deps(context)
+    repo: Repository = data["repo"]
+    analysis: AnalysisService = data["analysis"]
+    messages: MessageService | None = data.get("messages")
+    chat_id = member.telegram_chat_id
+    try:
+        prop = await repo.get_property(property_id)
+        prop = await analysis.analyze(prop, [], pasted_text=text, pasted_link=link, require_contacts=False)
+        if prop.status == "analizzato" and messages is not None:
+            await messages.write(prop, member.name)
+            await repo.update_property(prop.id, status="proposto", assigned_to=member.id, proposed_at=datetime.now(UTC))
+            await repo.add_property_event(
+                prop.id, actor_id=member.id, actor_label=member.name, source="telegram", event_type="proposta",
+                from_status="analizzato", to_status="proposto", details={"da": "/analizza"},
+            )
+            prop = await repo.get_property(prop.id)
+        state = await repo.get_state()
+        note = None
+        if prop.status == "scartato":
+            note = f"❌ Esclusa dall'analisi: {((prop.analysis or {}).get('esclusione') or {}).get('spiegazione', prop.discard_reason)}"
+        sent = await context.bot.send_message(
+            chat_id, cards.card_text(prop, state.mode, member.name, note), parse_mode=ParseMode.HTML,
+            reply_markup=cards.card_keyboard(prop), disable_web_page_preview=True,
+        )
+        await repo.update_property(prop.id, telegram_chat_id=chat_id, telegram_message_id=sent.message_id)
+    except BudgetExceeded as exc:
+        await context.bot.send_message(chat_id, f"⚠️ {exc}")
+    except (AIError, TelegramError) as exc:
+        log.warning("Analisi incollata non riuscita: %s", exc)
+        await context.bot.send_message(chat_id, "⚠️ Analisi non riuscita. Riprova tra poco.")
+
+
+# ── Pulsanti delle schede ────────────────────────────────────
+async def _refresh_card(context: ContextTypes.DEFAULT_TYPE, prop: Property, note: str | None = None) -> None:
+    if not (prop.telegram_chat_id and prop.telegram_message_id):
+        return
+    repo: Repository = deps(context)["repo"]
+    state = await repo.get_state()
+    names = await member_names(repo)
+    try:
+        await context.bot.edit_message_text(
+            cards.card_text(prop, state.mode, names.get(prop.assigned_to or ""), note),
+            chat_id=prop.telegram_chat_id,
+            message_id=prop.telegram_message_id,
+            parse_mode=ParseMode.HTML,
+            reply_markup=cards.card_keyboard(prop),
+            disable_web_page_preview=True,
+        )
+    except BadRequest as exc:
+        if "not modified" not in str(exc).lower():
+            log.warning("Scheda non aggiornata: %s", exc)
+
+
+async def _change(
+    repo: Repository, prop: Property, member: LeadFinder, status: str, event: str, **fields: Any
+) -> Property:
+    await repo.update_property(prop.id, status=status, **fields)
+    await repo.add_property_event(
+        prop.id, actor_id=member.id, actor_label=member.name, source="telegram", event_type=event,
+        from_status=prop.status, to_status=status, details={k: str(v) for k, v in fields.items() if k != "messages"},
+    )
+    return await repo.get_property(prop.id) or prop
+
+
+ACTIVE = ("proposto", "approvato")
+
+
+async def card_button(update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder) -> None:
+    query = update.callback_query
+    try:
+        _, action, property_id = (query.data or "").split(":", 2)
+    except ValueError:
+        await query.answer()
+        return
+    repo: Repository = deps(context)["repo"]
+    prop = await repo.get_property(property_id)
+    if prop is None:
+        await query.answer("Struttura non trovata.", show_alert=True)
+        return
+    if not member.is_owner and prop.assigned_to != member.id:
+        await query.answer("Questa scheda è assegnata a un'altra persona.", show_alert=True)
+        return
+    now = datetime.now(UTC)
+
+    if action == "em":
+        await query.answer()
+        await context.bot.send_message(query.message.chat_id, cards.email_text(prop), parse_mode=ParseMode.HTML)
+        return
+    if action == "tel":
+        await query.answer()
+        await context.bot.send_message(query.message.chat_id, cards.phone_text(prop), parse_mode=ParseMode.HTML)
+        return
+    if action == "ed":
+        await query.answer()
+        await context.bot.send_message(
+            query.message.chat_id, f"Cosa vuoi modificare di «{prop.name}»?", reply_markup=cards.edit_choice_keyboard(prop)
+        )
+        return
+    if action in ("ew", "ee"):
+        context.user_data["edit"] = {"property_id": prop.id, "channel": "whatsapp" if action == "ew" else "email"}
+        await query.answer()
+        what = "del messaggio WhatsApp" if action == "ew" else "dell'email (solo il corpo, l'oggetto resta)"
+        await context.bot.send_message(query.message.chat_id, f"Scrivi il nuovo testo {what}.\nPer lasciar perdere: /annulla")
+        return
+
+    if prop.status not in ACTIVE and action != "oo":
+        await query.answer("Questa scheda è già chiusa.", show_alert=True)
+        return
+    if action == "ok":
+        prop = await _change(repo, prop, member, "approvato", "approvata")
+        await query.answer("Approvata")
+    elif action == "no":
+        prop = await _change(repo, prop, member, "scartato", "scartata", discard_reason="scartata_dal_team")
+        await query.answer("Scartata")
+    elif action == "pm":
+        prop = await _change(repo, prop, member, "scartato", "gia_gestita", discard_reason="gestita_da_altri")
+        await query.answer("Segnata come già gestita da altri")
+    elif action == "oo":
+        await repo.add_opt_out(prop.phone_normalized, prop.email_normalized, "chiesto dal team", member.id)
+        prop = await _change(repo, prop, member, "perso", "opt_out", discard_reason="opt_out")
+        await query.answer("Non verrà più contattata")
+    elif action in ("sw", "se"):
+        channel = "whatsapp" if action == "sw" else "email"
+        prop = await _change(repo, prop, member, "contattato", "inviato", channel=channel, contacted_at=now)
+        await query.answer("Segnato come inviato")
+    else:
+        await query.answer()
+        return
+    await _refresh_card(context, prop)
+
+
+# ── Modifica dei testi ───────────────────────────────────────
+async def save_edit(update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder) -> bool:
+    """Se c'è una modifica in sospeso salva il testo e restituisce True."""
+    pending = context.user_data.get("edit")
+    if not pending:
+        return False
+    context.user_data.pop("edit", None)
+    repo: Repository = deps(context)["repo"]
+    prop = await repo.get_property(pending["property_id"])
+    text = (update.effective_message.text or "").strip()
+    if prop is None or not text:
+        await update.effective_message.reply_text("Modifica annullata.")
+        return True
+    if not member.is_owner and prop.assigned_to != member.id:
+        await update.effective_message.reply_text("Questa scheda è assegnata a un'altra persona.")
+        return True
+    messages = dict(prop.messages or {})
+    if pending["channel"] == "whatsapp":
+        messages["whatsapp"] = text[:2000]
+    else:
+        messages["email"] = {**(messages.get("email") or {}), "corpo": text[:5000]}
+    await repo.update_property(prop.id, messages=messages, message_edited=True)
+    await repo.add_property_event(
+        prop.id, actor_id=member.id, actor_label=member.name, source="telegram", event_type="messaggio_modificato",
+        details={"canale": pending["channel"]},
+    )
+    prop = await repo.get_property(prop.id)
+    await _refresh_card(context, prop)
+    await update.effective_message.reply_text("✅ Testo salvato. La scheda è aggiornata.")
+    return True
+
+
+async def annulla(update: Update, context: ContextTypes.DEFAULT_TYPE, member: LeadFinder) -> None:
+    had = context.user_data.pop("edit", None)
+    await update.effective_message.reply_text("Modifica annullata." if had else "Nessuna modifica in corso.")

@@ -27,9 +27,16 @@ class FakeBot:
 
     def __init__(self) -> None:
         self.sent: list[tuple[int, str]] = []
+        self.sent_kwargs: list[dict[str, object]] = []
+        self.edited: list[dict[str, object]] = []
 
-    async def send_message(self, chat_id: int, text: str, **_: object) -> None:
+    async def send_message(self, chat_id: int, text: str, **kwargs: object) -> SimpleNamespace:
         self.sent.append((chat_id, text))
+        self.sent_kwargs.append(kwargs)
+        return SimpleNamespace(message_id=len(self.sent))
+
+    async def edit_message_text(self, text: str, **kwargs: object) -> None:
+        self.edited.append({"text": text, **kwargs})
 
 
 class World:

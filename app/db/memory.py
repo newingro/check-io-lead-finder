@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 from app.domain.dedupe import Candidate, normalize_email, normalize_phone
-from app.domain.models import ROLE_OWNER, LeadFinder, Settings, State
+from app.domain.models import OPEN_STATUSES, ROLE_OWNER, LeadFinder, Property, Settings, State
 from app.domain.radar import CellMemory
 
 from .repository import AlreadyLinkedError, CodeAlreadyUsedError, LinkTarget
@@ -49,6 +50,9 @@ class InMemoryRepository:
         self.fingerprints: dict[tuple[str, str], str | None] = {}
         self.properties: dict[str, dict[str, Any]] = {}
         self.opt_out: list[tuple[str | None, str | None]] = []
+        self.events: list[dict[str, Any]] = []
+        self.search_runs: dict[str, dict[str, Any]] = {}
+        self.ai_usage: list[dict[str, Any]] = []
 
     # Persone
     async def get_member_by_telegram(self, telegram_user_id: int) -> LeadFinder | None:
@@ -200,15 +204,29 @@ class InMemoryRepository:
             return None
         property_id = str(uuid.uuid4())
         self.properties[property_id] = {
-            "candidate": candidate,
+            "id": property_id,
+            "name": candidate.name,
+            "property_type": candidate.property_type,
+            "address": candidate.address,
+            "latitude": candidate.latitude,
+            "longitude": candidate.longitude,
+            "google_place_id": candidate.google_place_id,
+            "phone": candidate.phone,
             "phone_normalized": normalize_phone(candidate.phone),
+            "email": candidate.email,
             "email_normalized": normalize_email(candidate.email),
+            "website": candidate.website,
+            "cin": candidate.cin,
+            "ratings": dict(candidate.ratings),
+            "listing_urls": dict(candidate.listing_urls),
             "cell": cell,
             "provincia": provincia,
             "zone": zone,
             "query": query,
+            "search_query": query,
             "status": "nuovo",
             "times_seen": 1,
+            "created_at": datetime.now(UTC),
         }
         for p in prints:
             self.fingerprints[p] = property_id
@@ -216,3 +234,124 @@ class InMemoryRepository:
 
     async def purge_expired(self) -> int:
         return 0
+
+    # Strutture
+    def _property(self, row: dict[str, Any]) -> Property:
+        names = {f.name for f in dataclass_fields(Property)}
+        return Property(**{k: v for k, v in row.items() if k in names})
+
+    async def get_property(self, property_id: str) -> Property | None:
+        row = self.properties.get(property_id)
+        return self._property(row) if row else None
+
+    async def properties_by_status(self, status: str, limit: int) -> list[Property]:
+        rows = [r for r in self.properties.values() if r.get("status") == status]
+        rows.sort(key=lambda r: r.get("created_at") or datetime.min.replace(tzinfo=UTC))
+        return [self._property(r) for r in rows[:limit]]
+
+    async def update_property(self, property_id: str, **fields: Any) -> None:
+        self.properties[property_id].update(fields)
+
+    async def add_property_event(
+        self,
+        property_id: str,
+        *,
+        actor_id: str | None,
+        actor_label: str,
+        source: str,
+        event_type: str,
+        from_status: str | None = None,
+        to_status: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self.events.append(
+            {
+                "property_id": property_id, "actor_id": actor_id, "actor_label": actor_label, "source": source,
+                "event_type": event_type, "from_status": from_status, "to_status": to_status, "details": details or {},
+            }
+        )
+
+    async def proposal_candidates(self, min_score: int, limit: int) -> list[Property]:
+        rows = [
+            r for r in self.properties.values()
+            if r.get("status") == "analizzato" and not r.get("assigned_to") and (r.get("score") or 0) >= min_score
+        ]
+        rows.sort(key=lambda r: -(r.get("score") or 0))
+        return [self._property(r) for r in rows[:limit]]
+
+    async def open_assignments(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for r in self.properties.values():
+            if r.get("assigned_to") and r.get("status") in OPEN_STATUSES:
+                counts[r["assigned_to"]] = counts.get(r["assigned_to"], 0) + 1
+        return counts
+
+    async def add_opt_out(self, phone: str | None, email: str | None, reason: str, member_id: str | None) -> None:
+        if phone or email:
+            self.opt_out.append((phone, email))
+
+    async def insert_manual_property(
+        self, name: str, listing_urls: dict[str, str], prints: list[tuple[str, str]], cin: str | None, member_id: str
+    ) -> str | None:
+        if any(p in self.fingerprints for p in prints):
+            return None
+        property_id = str(uuid.uuid4())
+        self.properties[property_id] = {
+            "id": property_id, "name": name, "listing_urls": dict(listing_urls), "cin": cin,
+            "source": "link_incollato", "assigned_to": member_id, "status": "nuovo", "times_seen": 1,
+            "created_at": datetime.now(UTC),
+        }
+        for p in prints:
+            self.fingerprints[p] = property_id
+        return property_id
+
+    # Costi
+    async def month_costs(self, since: datetime) -> tuple[Decimal, Decimal]:
+        search = sum((r["cost_eur"] for r in self.search_runs.values() if r["started_at"] >= since), Decimal(0))
+        ai = sum((u["cost_eur"] for u in self.ai_usage if u["created_at"] >= since), Decimal(0))
+        return Decimal(search), Decimal(ai)
+
+    async def start_search_run(self, *, zone: str, query: str, cell: str | None, provincia: str | None) -> str:
+        run_id = str(uuid.uuid4())
+        self.search_runs[run_id] = {
+            "zone": zone, "query": query, "cell": cell, "provincia": provincia, "status": "in_corso",
+            "started_at": datetime.now(UTC), "cost_eur": Decimal(0),
+        }
+        return run_id
+
+    async def finish_search_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        results: int,
+        new: int,
+        known: int,
+        excluded: int,
+        pages: int,
+        cost_eur: Decimal,
+        error: str | None = None,
+    ) -> None:
+        self.search_runs[run_id].update(
+            status=status, results=results, new=new, known=known, excluded=excluded, pages=pages,
+            cost_eur=cost_eur, error=error,
+        )
+
+    async def record_ai_usage(
+        self,
+        *,
+        purpose: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cost_eur: Decimal,
+        property_id: str | None,
+        request_id: str | None,
+    ) -> None:
+        self.ai_usage.append(
+            {
+                "purpose": purpose, "model": model, "input_tokens": input_tokens, "output_tokens": output_tokens,
+                "cost_eur": cost_eur, "property_id": property_id, "request_id": request_id,
+                "created_at": datetime.now(UTC),
+            }
+        )

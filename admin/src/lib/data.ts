@@ -178,6 +178,22 @@ export interface PropertyDetail extends PropertyRow {
   search_query: string | null;
   cell: string | null;
   last_seen_at: string;
+  score: number | null;
+  score_reasons: string[] | null;
+  analysis: {
+    sintesi?: string;
+    recensioni?: { lette?: number; temi_negativi?: { tema: string; volte: number; su_quante: number }[]; temi_positivi?: string[] };
+    esclusione?: { escludi?: boolean; spiegazione?: string };
+  } | null;
+  messages: {
+    whatsapp?: string;
+    email?: { oggetto?: string; corpo?: string };
+    telefono?: { apertura?: string; domande?: string[] };
+    variante?: string;
+    da_ricontrollare?: string[];
+  } | null;
+  message_variant: string | null;
+  discard_reason: string | null;
 }
 
 export interface PropertyEvent {
@@ -195,7 +211,7 @@ export async function loadProperty(id: string): Promise<{ property: PropertyDeta
   const supabase = await createClient();
   const { data } = await supabase
     .from("properties")
-    .select("id, name, property_type, zone, provincia, status, created_at, times_seen, view_count, last_viewed_at, address, phone, email, website, cin, ratings, search_query, cell, last_seen_at, viewer:lead_finders!properties_last_viewed_by_fkey(name)")
+    .select("id, name, property_type, zone, provincia, status, created_at, times_seen, view_count, last_viewed_at, address, phone, email, website, cin, ratings, search_query, cell, last_seen_at, score, score_reasons, analysis, messages, message_variant, discard_reason, viewer:lead_finders!properties_last_viewed_by_fkey(name)")
     .eq("id", id)
     .maybeSingle();
   if (!data) return null;

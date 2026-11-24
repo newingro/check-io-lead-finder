@@ -36,6 +36,7 @@ test("impostazioni: limiti e formati", () => {
     search_queries: ["casa vacanze"],
     min_score: 60,
     cards_per_run: 5,
+    searches_per_run: 4,
     run_days: ["lun"],
     run_times: ["10:00", "15:30"],
     followup_days: 5,
@@ -51,4 +52,6 @@ test("impostazioni: limiti e formati", () => {
   assert.equal(settingsSchema.safeParse({ ...ok, run_times: ["25:00"] }).success, false);
   assert.equal(settingsSchema.safeParse({ ...ok, min_score: 140 }).success, false);
   assert.equal(settingsSchema.safeParse({ ...ok, run_days: [] }).success, false);
+  assert.equal(settingsSchema.safeParse({ ...ok, searches_per_run: 0 }).success, true);
+  assert.equal(settingsSchema.safeParse({ ...ok, searches_per_run: 51 }).success, false);
 });

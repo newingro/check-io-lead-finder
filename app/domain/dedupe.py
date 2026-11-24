@@ -15,10 +15,11 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from urllib.parse import urlparse
 from dataclasses import dataclass, field
 from typing import Any
 
-KINDS = ("google", "cin", "telefono", "email", "nome_indirizzo")
+KINDS = ("google", "cin", "telefono", "email", "nome_indirizzo", "annuncio")
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -115,3 +116,27 @@ def fingerprints(candidate: Candidate) -> list[tuple[str, str]]:
         "nome_indirizzo": normalize_name_address(candidate.name, candidate.address),
     }
     return [(kind, _hash(kind, value)) for kind, value in values.items() if value]
+
+
+def normalize_listing_url(url: str | None) -> str | None:
+    """Link di un annuncio senza parametri: «booking.com/hotel/it/casa-sole.it.html»."""
+    if not url:
+        return None
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower().removeprefix("www.").removeprefix("m.")
+    path = parsed.path.rstrip("/").lower()
+    if not host or not path:
+        return None
+    return f"{host}{path}"
+
+
+def listing_fingerprints(url: str | None, cin: str | None) -> list[tuple[str, str]]:
+    """Impronte di un annuncio incollato a mano: link normalizzato e, se c'è, CIN."""
+    prints = []
+    link = normalize_listing_url(url)
+    if link:
+        prints.append(("annuncio", _hash("annuncio", link)))
+    code = normalize_cin(cin)
+    if code:
+        prints.append(("cin", _hash("cin", code)))
+    return prints

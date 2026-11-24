@@ -10,7 +10,7 @@ from typing import Any
 from telegram import Update
 from telegram.constants import ChatType
 from telegram.error import Forbidden, TelegramError
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from app.db.repository import Repository
 from app.domain.models import MODES, ROLE_OWNER, ROLE_SALES, LeadFinder
@@ -20,7 +20,7 @@ from app.services.control import ControlService
 from app.services.linking import LinkingService, LinkOutcome
 from app.services.settings_watch import SettingsWatcher
 
-from . import texts
+from . import leads, texts
 
 log = logging.getLogger(__name__)
 
@@ -288,7 +288,22 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def plain_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     member = await current_member(update, context)
+    if member is not None and member.is_active and await leads.save_edit(update, context, member):
+        return
     await reply(update, texts.ONLY_COMMANDS if member else texts.NOT_MEMBER)
+
+
+cerca = owner_only(leads.cerca)
+analizza = members_only(leads.analizza)
+annulla = members_only(leads.annulla)
+
+
+async def card_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    member = await current_member(update, context)
+    if member is None or not member.is_active:
+        await update.callback_query.answer("Non sei abilitato a usare questa scheda.", show_alert=True)
+        return
+    await leads.card_button(update, context, member)
 
 
 async def watch_settings(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -325,6 +340,10 @@ def register(app: Application) -> None:
     app.add_handler(CommandHandler("riprendi", riprendi, filters=private))
     app.add_handler(CommandHandler("modalita", modalita, filters=private))
     app.add_handler(CommandHandler("impostazioni", impostazioni, filters=private))
+    app.add_handler(CommandHandler("cerca", cerca, filters=private))
+    app.add_handler(CommandHandler("analizza", analizza, filters=private))
+    app.add_handler(CommandHandler("annulla", annulla, filters=private))
+    app.add_handler(CallbackQueryHandler(card_button, pattern=r"^c:"))
     app.add_handler(MessageHandler(private & filters.COMMAND, unknown_command))
     app.add_handler(MessageHandler(private & filters.TEXT & ~filters.COMMAND, plain_text))
     app.add_error_handler(on_error)

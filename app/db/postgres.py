@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from psycopg import errors
@@ -11,13 +12,26 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from app.domain.dedupe import Candidate, normalize_email, normalize_phone
-from app.domain.models import LeadFinder, Settings, State
+from app.domain.models import OPEN_STATUSES, LeadFinder, Property, Settings, State
 from app.domain.radar import CellMemory
 
 from .repository import AlreadyLinkedError, CodeAlreadyUsedError, LinkTarget
 
 MEMBER_COLUMNS = """id::text, name, role, telegram_user_id, telegram_chat_id, telegram_username, shifts,
     receives_cards, receives_daily_summary, is_active, linked_at"""
+
+PROPERTY_COLUMNS = """id::text, name, status, property_type, address, zone, provincia, latitude, longitude, phone,
+    phone_normalized, email, email_normalized, website, cin, google_place_id, ratings, listing_urls, owner_type,
+    analysis, score, coalesce(score_reasons, '{}') as score_reasons, assigned_to::text, messages, message_variant,
+    channel, website_check, discard_reason, source, search_query, times_seen, telegram_chat_id, telegram_message_id,
+    message_edited, created_at, contacted_at"""
+
+UPDATABLE_PROPERTY_COLUMNS = {
+    "name", "status", "property_type", "email", "email_normalized", "cin", "listing_urls", "owner_type", "analysis",
+    "score", "score_reasons", "assigned_to", "messages", "message_variant", "channel", "website_check",
+    "discard_reason", "analyzed_at", "proposed_at", "telegram_chat_id", "telegram_message_id", "message_edited",
+    "contacted_at", "archived_at",
+}
 
 
 def create_pool(database_url: str) -> AsyncConnectionPool:
@@ -165,7 +179,7 @@ class PostgresRepository:
                 "select zones, property_types, search_queries, min_score, cards_per_run, run_times, run_days, "
                 "followup_days, max_followups, archive_after_days, max_call_attempts, call_retry_minutes, "
                 "monthly_ai_budget_eur, monthly_search_budget_eur, data_retention_months, version, updated_by, "
-                "updated_at from finder_settings where id = 1"
+                "updated_at, searches_per_run from finder_settings where id = 1"
             )
             row = await cur.fetchone()
         return Settings(**row)
@@ -349,6 +363,173 @@ class PostgresRepository:
             row = await cur.fetchone()
         return int(row["removed"])
 
+
+    # ── Strutture ────────────────────────────────────────────
+    async def get_property(self, property_id: str) -> Property | None:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(f"select {PROPERTY_COLUMNS} from properties where id = %s", (property_id,))
+            row = await cur.fetchone()
+        return Property(**row) if row else None
+
+    async def properties_by_status(self, status: str, limit: int) -> list[Property]:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                f"select {PROPERTY_COLUMNS} from properties where status = %s and archived_at is null "
+                "order by created_at limit %s",
+                (status, limit),
+            )
+            rows = await cur.fetchall()
+        return [Property(**row) for row in rows]
+
+    async def update_property(self, property_id: str, **fields: Any) -> None:
+        if not fields:
+            return
+        unknown = set(fields) - UPDATABLE_PROPERTY_COLUMNS
+        if unknown:
+            raise ValueError(f"Colonne non modificabili: {sorted(unknown)}")
+        names = sorted(fields)
+        assignments = ", ".join(f"{name} = %s" for name in names)
+        values = [Jsonb(fields[n]) if isinstance(fields[n], dict) else fields[n] for n in names]
+        async with self.pool.connection() as conn:
+            await conn.execute(f"update properties set {assignments} where id = %s", (*values, property_id))
+
+    async def add_property_event(
+        self,
+        property_id: str,
+        *,
+        actor_id: str | None,
+        actor_label: str,
+        source: str,
+        event_type: str,
+        from_status: str | None = None,
+        to_status: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "insert into property_events (property_id, actor_id, actor_label, source, event_type, from_status, "
+                "to_status, details) values (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (property_id, actor_id, actor_label, source, event_type, from_status, to_status, Jsonb(details or {})),
+            )
+
+    async def proposal_candidates(self, min_score: int, limit: int) -> list[Property]:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                f"select {PROPERTY_COLUMNS} from properties where status = 'analizzato' and assigned_to is null "
+                "and archived_at is null and score >= %s order by score desc, created_at limit %s",
+                (min_score, limit),
+            )
+            rows = await cur.fetchall()
+        return [Property(**row) for row in rows]
+
+    async def open_assignments(self) -> dict[str, int]:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "select assigned_to::text as member, count(*) as n from properties "
+                "where assigned_to is not null and status = any(%s) group by assigned_to",
+                (list(OPEN_STATUSES),),
+            )
+            rows = await cur.fetchall()
+        return {row["member"]: int(row["n"]) for row in rows}
+
+    async def add_opt_out(self, phone: str | None, email: str | None, reason: str, member_id: str | None) -> None:
+        if not phone and not email:
+            return
+        async with self.pool.connection() as conn, conn.transaction():
+            if phone:
+                await conn.execute(
+                    "insert into opt_out (phone_normalized, reason, created_by) values (%s, %s, %s) "
+                    "on conflict (phone_normalized) where phone_normalized is not null do nothing",
+                    (phone, reason, member_id),
+                )
+            if email:
+                await conn.execute(
+                    "insert into opt_out (email_normalized, reason, created_by) values (%s, %s, %s) "
+                    "on conflict (email_normalized) where email_normalized is not null do nothing",
+                    (email, reason, member_id),
+                )
+
+    async def insert_manual_property(
+        self, name: str, listing_urls: dict[str, str], prints: list[tuple[str, str]], cin: str | None, member_id: str
+    ) -> str | None:
+        kinds, hashes = [k for k, _ in prints], [h for _, h in prints]
+        try:
+            async with self.pool.connection() as conn, conn.transaction():
+                cur = await conn.execute(
+                    "insert into properties (name, listing_urls, cin, source, assigned_to) "
+                    "values (%s, %s, %s, 'link_incollato', %s) returning id::text as id",
+                    (name, Jsonb(listing_urls), cin, member_id),
+                )
+                property_id = (await cur.fetchone())["id"]
+                cur = await conn.execute(
+                    "insert into property_fingerprints (kind, hash, property_id) "
+                    "select kind, hash, %s from unnest(%s::text[], %s::text[]) as u(kind, hash) "
+                    "on conflict (kind, hash) do nothing returning kind",
+                    (property_id, kinds, hashes),
+                )
+                if len(await cur.fetchall()) < len(prints):
+                    raise _AlreadyKnown
+        except (_AlreadyKnown, errors.UniqueViolation):
+            return None
+        return property_id
+
+    # ── Costi ────────────────────────────────────────────────
+    async def month_costs(self, since: datetime) -> tuple[Decimal, Decimal]:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "select (select coalesce(sum(cost_eur), 0) from search_runs where started_at >= %s) as ricerche, "
+                "(select coalesce(sum(cost_eur), 0) from ai_usage where created_at >= %s) as ai",
+                (since, since),
+            )
+            row = await cur.fetchone()
+        return Decimal(row["ricerche"]), Decimal(row["ai"])
+
+    async def start_search_run(self, *, zone: str, query: str, cell: str | None, provincia: str | None) -> str:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "insert into search_runs (zone, query, cell, provincia) values (%s, %s, %s, %s) returning id::text as id",
+                (zone, query, cell, provincia),
+            )
+            row = await cur.fetchone()
+        return row["id"]
+
+    async def finish_search_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        results: int,
+        new: int,
+        known: int,
+        excluded: int,
+        pages: int,
+        cost_eur: Decimal,
+        error: str | None = None,
+    ) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "update search_runs set finished_at = now(), status = %s, results_count = %s, new_count = %s, "
+                "known_count = %s, excluded_count = %s, pages = %s, cost_eur = %s, error = %s where id = %s",
+                (status, results, new, known, excluded, pages, cost_eur, error, run_id),
+            )
+
+    async def record_ai_usage(
+        self,
+        *,
+        purpose: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cost_eur: Decimal,
+        property_id: str | None,
+        request_id: str | None,
+    ) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "insert into ai_usage (purpose, model, input_tokens, output_tokens, cost_eur, property_id, request_id) "
+                "values (%s, %s, %s, %s, %s, %s, %s)",
+                (purpose, model, input_tokens, output_tokens, cost_eur, property_id, request_id),
+            )
 
 class _AlreadyKnown(Exception):
     """Annulla il salvataggio: la struttura è già in memoria."""

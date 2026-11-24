@@ -3,9 +3,8 @@
 Bot Telegram che trova strutture in affitto breve, le analizza e prepara per il team di CHECK-iO
 messaggi personalizzati da approvare e inviare a mano.
 
-Il progetto procede per fasi. **Questa è la fase 1 (fondamenta):** database, bot Telegram che
-risponde, collegamento delle persone del team con un codice, impostazioni lette dal database,
-pausa e modalità. Ricerca, analisi e messaggi arrivano nelle fasi successive.
+Il progetto procede per fasi. Fatte: fase 1 (fondamenta), radar e memoria, fase 2 (ricerca), fase 3 (analisi), fase 4 (messaggi e
+schede). Prossima: fase 5 (telefonate, esiti, richiami, follow-up, riepilogo serale).
 
 ## Comandi del bot
 
@@ -21,8 +20,12 @@ pausa e modalità. Ricerca, analisi e messaggi arrivano nelle fasi successive.
 | `/pausa`, `/riprendi` | titolare | ferma o riavvia i giri |
 | `/modalita telefonate` · `messaggi` · `misto` | titolare | cambia la modalità |
 | `/impostazioni` | titolare | le impostazioni attuali |
+| `/cerca` | titolare | fa partire subito un giro (ricerca, analisi, schede) |
+| `/analizza link + testo` | team | analizza un annuncio trovato a mano (incolla il testo: il bot non apre i portali) |
+| `/annulla` | team | annulla una modifica in corso |
 
 Chi non fa parte del team riceve solo un messaggio di cortesia. Il bot parte **in pausa**.
+Le schede delle strutture arrivano con i pulsanti (vedi «Ricerca, analisi e schede»).
 
 ## Come funziona il primo collegamento
 
@@ -101,6 +104,41 @@ La ricerca su Google Places arriva nella fase 2 e userà `RadarService` (`app/se
 Confini di regioni e province: ISTAT 2026, pubblicati da openpolis/geojson-italy (CC BY 4.0).
 Per aggiornarli: scarica `limits_IT_regions.geojson` e `limits_IT_provinces.geojson` in una
 cartella e lancia `python -I scripts/build_geo.py CARTELLA` (rigenera mappa, celle e migrazione).
+
+## Ricerca, analisi e schede (fasi 2-4)
+
+A ogni giro (orari e giorni dalle impostazioni, solo se i giri non sono in pausa) il bot:
+
+1. **Cerca** su Google Maps (Places API) nelle celle scelte dal radar, con le parole delle impostazioni.
+   Ogni pagina di risultati è una richiesta pagata: costo e risultati finiscono in `search_runs`.
+   Hotel, ostelli, campeggi e strutture chiuse vengono esclusi (si ricorda solo l'impronta).
+2. **Legge il sito proprio** della struttura (mai Booking, Airbnb o Trivago): email pubblica, CIN, portali.
+3. **Analizza** con Claude (JSON strutturato): profilo, recensioni (al massimo 5, quelle che dà Google, senza
+   i nomi degli autori), segnali di opportunità, esclusioni e punteggio 0-100 con i motivi. Le strutture senza
+   telefono né email pubblici si scartano senza spendere. Le recensioni non si salvano.
+4. **Prepara le schede**: per le migliori (punteggio ≥ minimo, fino a «schede per giro») scrive i messaggi
+   WhatsApp, email e la scheda telefonata in versione A (analisi gratuita) o B (chiacchierata di 10 minuti),
+   li controlla in automatico (niente numeri inventati, percentuali, frasi vietate; chi siamo, come l'abbiamo
+   trovato, come dire no) e manda la scheda a chi è di turno, con il carico distribuito.
+5. **Riepilogo al titolare** con la spesa del giro e del mese.
+
+Pulsanti della scheda: Approva · Modifica · Scarta · Email · Telefonata · Già gestita da altri · Non contattare;
+dopo l'approvazione: Apri WhatsApp (messaggio già scritto) · Inviato · Testo email · Inviata. L'invio resta
+sempre manuale. Ogni passaggio finisce nello storico della struttura.
+
+Comandi: `/cerca` (titolare, un giro subito), `/analizza link + testo incollato` (tutti: analizza un annuncio
+trovato a mano; il bot non apre i portali), `/annulla`.
+
+**Tetti di spesa**: prima di ogni ricerca e di ogni chiamata AI si controlla la spesa del mese contro i tetti
+del gestionale. Consiglio: imposta anche un limite di richieste al giorno nella console di Google Cloud.
+
+**Variabili su Railway** (mai in chat): `GOOGLE_MAPS_API_KEY`, `GOOGLE_TEXT_SEARCH_USD_PER_1000` (prezzo dello SKU
+«Text Search Enterprise + Atmosphere» dalla pagina prezzi di Google), `ANTHROPIC_API_KEY`; facoltative
+`CLAUDE_MODEL` (predefinito `claude-opus-5-5`), `CLAUDE_EFFORT` (predefinito `medium`), `EUR_PER_USD`
+(predefinito 1: un dollaro contato come un euro).
+
+**Da verificare con il consulente prima della partenza**: testo del primo contatto, base giuridica per WhatsApp
+ed email, e i termini di Google Maps Platform sulla conservazione dei dati delle schede.
 
 ## Gestionale web
 

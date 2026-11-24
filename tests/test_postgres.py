@@ -240,3 +240,62 @@ async def test_celle_delle_province_identiche_tra_database_e_mappa(repo):
     assert len(expected) == len(rows) == 110
     assert sum(len(c) for c in rows.values()) == 14578
     assert {code: list(cells) for code, cells in rows.items()} == expected
+
+
+async def test_strutture_costi_e_schede_sul_database(repo):
+    """Metodi delle fasi 2-4 sul database vero: ricerche, consumi AI, analisi, proposte, esclusioni."""
+    from datetime import UTC, datetime, timedelta
+    from decimal import Decimal
+
+    from app.domain.dedupe import Candidate, fingerprints, listing_fingerprints
+
+    repository, url = repo
+    since = datetime.now(UTC) - timedelta(days=1)
+    run_id = await repository.start_search_run(zone="Pistoia", query="b&b", cell="980_170", provincia="047")
+    await repository.finish_search_run(
+        run_id, status="completata", results=3, new=2, known=1, excluded=0, pages=1, cost_eur=Decimal("0.04")
+    )
+    await repository.record_ai_usage(
+        purpose="analisi", model="claude-opus-5-5", input_tokens=1000, output_tokens=500,
+        cost_eur=Decimal("0.014"), property_id=None, request_id="req_x",
+    )
+    assert await repository.month_costs(since) == (Decimal("0.0400"), Decimal("0.01400"))
+
+    candidate = Candidate(name="Baita", address="Via Baita 1, Abetone", google_place_id="g1", phone="333 1234567")
+    pid = await repository.insert_property(candidate, fingerprints(candidate), cell="980_170", provincia="047",
+                                           zone="Pistoia", query="b&b")
+    prop = await repository.get_property(pid)
+    assert prop.status == "nuovo" and prop.phone_normalized == "+393331234567"
+    assert [p.id for p in await repository.properties_by_status("nuovo", 10)] == [pid]
+
+    await repository.update_property(
+        pid, status="analizzato", score=75, score_reasons=["+ check-in"], analysis={"sintesi": "ok"},
+        owner_type="privato", website_check={"letto": False}, analyzed_at=datetime.now(UTC),
+    )
+    with pytest.raises(ValueError):
+        await repository.update_property(pid, google_place_id="altro")  # colonna non modificabile
+    candidates = await repository.proposal_candidates(70, 5)
+    assert [c.id for c in candidates] == [pid] and candidates[0].analysis == {"sintesi": "ok"}
+    assert await repository.proposal_candidates(80, 5) == []
+
+    members = await repository.list_members()
+    owner = members[0] if members else await repository.create_member("Titolare", ROLE_OWNER, {})
+    await repository.update_property(pid, status="proposto", assigned_to=owner.id, messages={"whatsapp": "ciao"},
+                                     message_variant="A", telegram_chat_id=1, telegram_message_id=2)
+    assert await repository.open_assignments() == {owner.id: 1}
+    await repository.add_property_event(pid, actor_id=owner.id, actor_label="T", source="telegram",
+                                        event_type="approvata", from_status="proposto", to_status="approvato")
+    await repository.add_opt_out("+393331234567", "info@baita.it", "prova", owner.id)
+    await repository.add_opt_out("+393331234567", None, "di nuovo", owner.id)  # nessun doppione, nessun errore
+    assert await repository.is_opted_out("+393331234567", None)
+
+    prints = listing_fingerprints("https://www.booking.com/hotel/it/x.html?aid=1", None)
+    manual = await repository.insert_manual_property("Annuncio booking", {"booking": "https://booking.com/x"},
+                                                     prints, None, owner.id)
+    assert manual and (await repository.get_property(manual)).source == "link_incollato"
+    assert await repository.insert_manual_property("Annuncio booking", {}, prints, None, owner.id) is None
+
+    with psycopg.connect(url) as conn:
+        assert conn.execute("select count(*) from property_events where event_type = 'approvata'").fetchone()[0] == 1
+        assert conn.execute("select pages, cell from search_runs").fetchone() == (1, "980_170")
+        assert conn.execute("select searches_per_run from finder_settings").fetchone()[0] == 4

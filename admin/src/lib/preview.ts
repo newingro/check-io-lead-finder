@@ -18,6 +18,7 @@ export const previewSettings: SettingsRow = {
   search_queries: ["casa vacanze", "appartamenti vacanze", "B&B", "affittacamere", "guest house"],
   min_score: 60,
   cards_per_run: 5,
+  searches_per_run: 4,
   run_days: ["lun", "mar", "mer", "gio", "ven"],
   run_times: ["10:00", "12:30", "15:00"],
   followup_days: 5,
@@ -112,6 +113,17 @@ export const previewProperty: PropertyDetail = {
   search_query: "casa vacanze",
   cell: "981_170",
   last_seen_at: "2026-11-23T10:00:00Z",
+  score: 78,
+  score_reasons: ["+ esempio: check-in criticato in 2 recensioni su 5 lette", "+ esempio: nessun sito proprio"],
+  analysis: { sintesi: "Esempio di sintesi dell'analisi per l'anteprima." },
+  messages: {
+    whatsapp: "Esempio di messaggio WhatsApp per l'anteprima.\nSeconda riga di esempio.",
+    email: { oggetto: "Esempio di oggetto", corpo: "Esempio di corpo dell'email.\nSeconda riga." },
+    variante: "A",
+    da_ricontrollare: [],
+  },
+  message_variant: "A",
+  discard_reason: null,
 };
 
 export const previewEvents: PropertyEvent[] = [

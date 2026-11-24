@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Protocol
 
 from app.domain.dedupe import Candidate
-from app.domain.models import LeadFinder, Settings, State
+from app.domain.models import LeadFinder, Property, Settings, State
 from app.domain.radar import CellMemory
 
 
@@ -81,3 +82,54 @@ class Repository(Protocol):
         query: str,
     ) -> str | None: ...
     async def purge_expired(self) -> int: ...
+
+    # Strutture
+    async def get_property(self, property_id: str) -> Property | None: ...
+    async def properties_by_status(self, status: str, limit: int) -> list[Property]: ...
+    async def update_property(self, property_id: str, **fields: Any) -> None: ...
+    async def add_property_event(
+        self,
+        property_id: str,
+        *,
+        actor_id: str | None,
+        actor_label: str,
+        source: str,
+        event_type: str,
+        from_status: str | None = None,
+        to_status: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None: ...
+    async def proposal_candidates(self, min_score: int, limit: int) -> list[Property]: ...
+    async def open_assignments(self) -> dict[str, int]: ...
+    async def add_opt_out(self, phone: str | None, email: str | None, reason: str, member_id: str | None) -> None: ...
+    async def insert_manual_property(
+        self, name: str, listing_urls: dict[str, str], prints: list[tuple[str, str]], cin: str | None, member_id: str
+    ) -> str | None: ...
+
+    # Costi
+    async def month_costs(self, since: datetime) -> tuple[Decimal, Decimal]: ...
+    async def start_search_run(self, *, zone: str, query: str, cell: str | None, provincia: str | None) -> str: ...
+    async def finish_search_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        results: int,
+        new: int,
+        known: int,
+        excluded: int,
+        pages: int,
+        cost_eur: Decimal,
+        error: str | None = None,
+    ) -> None: ...
+    async def record_ai_usage(
+        self,
+        *,
+        purpose: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cost_eur: Decimal,
+        property_id: str | None,
+        request_id: str | None,
+    ) -> None: ...

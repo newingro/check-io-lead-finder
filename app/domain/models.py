@@ -57,6 +57,7 @@ class Settings:
     version: int
     updated_by: str | None = None
     updated_at: datetime | None = None
+    searches_per_run: int = 4
 
 
 @dataclass(frozen=True)
@@ -66,3 +67,57 @@ class State:
     version: int
     updated_by: str | None = None
     updated_at: datetime | None = None
+
+
+# ── Strutture ────────────────────────────────────────────────
+STATUSES = (
+    "nuovo", "analizzato", "proposto", "approvato", "scartato", "contattato", "followup",
+    "richiamare", "risposto", "trattativa", "cliente", "perso", "errore",
+)
+OPEN_STATUSES = ("proposto", "approvato")
+
+
+@dataclass
+class Property:
+    """Una struttura come la usa il bot (righe della tabella properties)."""
+
+    id: str
+    name: str
+    status: str = "nuovo"
+    property_type: str | None = None
+    address: str | None = None
+    zone: str | None = None
+    provincia: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    phone: str | None = None
+    phone_normalized: str | None = None
+    email: str | None = None
+    email_normalized: str | None = None
+    website: str | None = None
+    cin: str | None = None
+    google_place_id: str | None = None
+    ratings: dict[str, Any] = field(default_factory=dict)
+    listing_urls: dict[str, str] = field(default_factory=dict)
+    owner_type: str | None = None
+    analysis: dict[str, Any] | None = None
+    score: int | None = None
+    score_reasons: list[str] = field(default_factory=list)
+    assigned_to: str | None = None
+    messages: dict[str, Any] = field(default_factory=dict)
+    message_variant: str | None = None
+    channel: str | None = None
+    website_check: dict[str, Any] | None = None
+    discard_reason: str | None = None
+    source: str = "google_places"
+    search_query: str | None = None
+    times_seen: int = 1
+    telegram_chat_id: int | None = None
+    telegram_message_id: int | None = None
+    message_edited: bool = False
+    created_at: datetime | None = None
+    contacted_at: datetime | None = None
+
+    @property
+    def google_rating(self) -> dict[str, Any]:
+        return self.ratings.get("google") or {}

@@ -9,6 +9,27 @@ const EVENT_LABELS: Record<string, string> = {
   trovata: "Trovata dal radar",
   consultata: "Consultata",
   rimessa_in_ricerca: "Rimessa in ricerca",
+  analizzata: "Analizzata dall'AI",
+  esclusa: "Esclusa",
+  errore_analisi: "Errore nell'analisi",
+  messaggi_scritti: "Messaggi scritti",
+  messaggio_modificato: "Messaggio modificato",
+  proposta: "Scheda inviata su Telegram",
+  approvata: "Approvata",
+  scartata: "Scartata",
+  gia_gestita: "Già gestita da altri",
+  inviato: "Messaggio inviato",
+  opt_out: "Non vuole essere contattata",
+};
+
+const DISCARD_LABELS: Record<string, string> = {
+  senza_contatti: "nessun telefono o email pubblici",
+  hotel: "è un hotel",
+  gestita_da_altri: "già gestita da un altro property manager",
+  fuori_target: "fuori target",
+  chiusa: "chiusa",
+  scartata_dal_team: "scartata dal team",
+  opt_out: "ha chiesto di non essere contattata",
 };
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -65,8 +86,48 @@ export function PropertyView({
                 : null}
             </Row>
           </dl>
+          {property.messages?.whatsapp || property.messages?.email?.corpo ? (
+            <div className="mt-6 space-y-4 border-t border-line pt-5">
+              <h3 className="font-semibold text-navy-900">
+                Messaggi {property.messages?.variante ? <span className="font-normal text-slate">· versione {property.messages.variante}</span> : null}
+              </h3>
+              {property.messages?.whatsapp ? (
+                <div>
+                  <p className="text-xs font-semibold tracking-wide text-slate uppercase">WhatsApp</p>
+                  <p className="mt-1 rounded-md bg-paper p-3 text-sm whitespace-pre-line text-navy-900">{property.messages.whatsapp}</p>
+                </div>
+              ) : null}
+              {property.messages?.email?.corpo ? (
+                <div>
+                  <p className="text-xs font-semibold tracking-wide text-slate uppercase">Email · {property.messages.email.oggetto}</p>
+                  <p className="mt-1 rounded-md bg-paper p-3 text-sm whitespace-pre-line text-navy-900">{property.messages.email.corpo}</p>
+                </div>
+              ) : null}
+              {(property.messages?.da_ricontrollare ?? []).length ? (
+                <p className="text-sm text-amber-800">Da ricontrollare: {(property.messages?.da_ricontrollare ?? []).join("; ")}</p>
+              ) : null}
+            </div>
+          ) : null}
         </section>
         <aside className="space-y-4">
+          {property.score !== null || property.discard_reason ? (
+            <section className="card space-y-2 p-4 text-sm" aria-labelledby="analisi">
+              <h2 id="analisi" className="font-semibold text-navy-900">
+                Analisi {property.score !== null ? <span className="tabular-nums">· {property.score}/100</span> : null}
+              </h2>
+              {property.discard_reason ? (
+                <p className="text-slate">Scartata: {DISCARD_LABELS[property.discard_reason] ?? property.discard_reason}</p>
+              ) : null}
+              {(property.score_reasons ?? []).length ? (
+                <ul className="space-y-1 text-navy-900">
+                  {(property.score_reasons ?? []).map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {property.analysis?.sintesi ? <p className="text-slate italic">{property.analysis.sintesi}</p> : null}
+            </section>
+          ) : null}
           <section className="card p-4 text-sm" aria-labelledby="memoria-scheda">
             <h2 id="memoria-scheda" className="font-semibold text-navy-900">
               Memoria

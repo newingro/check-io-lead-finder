@@ -7,7 +7,7 @@ NOT_MEMBER = (
 )
 OWNER_ONLY = "Questo comando è riservato al titolare."
 UNKNOWN_COMMAND = "Comando non riconosciuto. Scrivi /aiuto per l'elenco dei comandi."
-ONLY_COMMANDS = "Per ora rispondo solo ai comandi. Scrivi /aiuto per l'elenco."
+ONLY_COMMANDS = "Rispondo ai comandi e ai pulsanti delle schede. Scrivi /aiuto per l'elenco."
 GENERIC_ERROR = "Si è verificato un errore. Riprova tra poco: se continua, avvisa il titolare."
 SUSPENDED = "Il tuo accesso è sospeso. Per informazioni contatta il titolare."
 
@@ -15,7 +15,11 @@ HELP_MEMBER = (
     "Comandi disponibili:\n"
     "/io — chi sei, ruolo e turni\n"
     "/stato — giri attivi o in pausa e modalità\n"
-    "/aiuto — questo elenco"
+    "/analizza link + testo — analizza un annuncio che hai trovato (incolla il testo: il bot non apre i portali)\n"
+    "/annulla — annulla una modifica in corso\n"
+    "/aiuto — questo elenco\n\n"
+    "Le schede delle strutture arrivano qui quando sei di turno: approva, modifica o scarta, "
+    "poi invia tu il messaggio e premi «Inviato»."
 )
 HELP_OWNER = (
     "\n\nComandi del titolare:\n"
@@ -24,7 +28,8 @@ HELP_OWNER = (
     "/team — le persone del team\n"
     "/pausa · /riprendi — ferma o riavvia i giri\n"
     "/modalita telefonate | messaggi | misto — cambia la modalità\n"
-    "/impostazioni — le impostazioni attuali"
+    "/impostazioni — le impostazioni attuali\n"
+    "/cerca — fai partire un giro adesso (ricerca, analisi, schede)"
 )
 
 COLLEGA_USAGE = "Scrivi il codice che hai ricevuto, per esempio:\n/collega ABCD-EFGH"

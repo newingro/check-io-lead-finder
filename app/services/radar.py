@@ -27,6 +27,7 @@ class SearchOutcome:
     already_known: int = 0
     opted_out: int = 0
     unidentifiable: int = 0
+    new_pairs: list[tuple[Candidate, str]] = field(default_factory=list)
 
 
 class RadarService:
@@ -57,6 +58,7 @@ class RadarService:
         now = now or datetime.now(UTC)
         seen_now: set[tuple[str, str]] = set()
         new_ids: list[str] = []
+        new_pairs: list[tuple[Candidate, str]] = []
         known = opted_out = unidentifiable = 0
         for candidate in candidates:
             prints = fingerprints(candidate)
@@ -81,9 +83,10 @@ class RadarService:
             )
             if property_id:
                 new_ids.append(property_id)
+                new_pairs.append((candidate, property_id))
             else:
                 known += 1
         previous = (await self.repo.get_cell_memory([target.cell], [target.query])).get((target.cell, target.query))
         memory = after_search(previous, target.cell, target.query, len(candidates), len(new_ids), now)
         await self.repo.save_cell_memory(memory, results=len(candidates), new=len(new_ids))
-        return SearchOutcome(target, len(candidates), new_ids, known, opted_out, unidentifiable)
+        return SearchOutcome(target, len(candidates), new_ids, known, opted_out, unidentifiable, new_pairs)

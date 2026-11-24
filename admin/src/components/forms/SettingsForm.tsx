@@ -35,6 +35,7 @@ export function SettingsForm({ settings, canEdit }: { settings: SettingsInput; c
       search_queries: list("search_queries"),
       min_score: num("min_score"),
       cards_per_run: num("cards_per_run"),
+      searches_per_run: num("searches_per_run"),
       run_days: form.getAll("run_days").map(String) as SettingsInput["run_days"],
       run_times: String(form.get("run_times") ?? "").split(/[,\s]+/).map((s) => s.trim()).filter(Boolean),
       followup_days: num("followup_days"),
@@ -69,6 +70,7 @@ export function SettingsForm({ settings, canEdit }: { settings: SettingsInput; c
         </div>
         <NumberField name="min_score" label="Punteggio minimo (0–100)" hint="Sotto questo valore la struttura viene scartata." min={0} max={100} value={settings.min_score} disabled={disabled} />
         <NumberField name="cards_per_run" label="Schede per giro" min={1} max={50} value={settings.cards_per_run} disabled={disabled} />
+        <NumberField name="searches_per_run" label="Ricerche Google per giro" hint="Ogni ricerca è una cella del radar con una parola: costa, quindi parti basso (0 = nessuna ricerca)." min={0} max={50} value={settings.searches_per_run} disabled={disabled} />
       </fieldset>
 
       <fieldset disabled={disabled} className="card grid gap-5 p-6 sm:grid-cols-2">

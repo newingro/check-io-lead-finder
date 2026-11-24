@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 DAYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
 DAY_NAMES = {
     "lun": "lunedì",
@@ -38,3 +40,16 @@ def format_shifts(shifts: dict[str, list[list[str]]] | None) -> str:
         parts.append(f"{days_label} {hours}")
         index = end + 1
     return "; ".join(parts)
+
+
+def on_shift(shifts: dict[str, list[list[str]]] | None, local_now: datetime) -> bool:
+    """True se l'ora locale cade dentro uno dei turni di quel giorno (estremi inclusi l'inizio, escluso la fine)."""
+    if not shifts:
+        return False
+    day = DAYS[local_now.weekday()]
+    hhmm = local_now.strftime("%H:%M")
+    return any(start <= hhmm < end for start, end in shifts.get(day) or [])
+
+
+def day_code(local_now: datetime) -> str:
+    return DAYS[local_now.weekday()]
