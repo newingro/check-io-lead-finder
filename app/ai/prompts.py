@@ -191,18 +191,20 @@ MESSAGE_SYSTEM = """Scrivi il primo contatto di CHECK-iO al proprietario di una 
 Obiettivo: far rispondere il proprietario, non vendergli tutto subito.
 
 Il canale principale è WhatsApp (il proprietario ha un cellulare). WhatsApp ed email seguono questo ordine:
-1. Presentazione: saluto, chi scrive e chi siamo (CHECK-iO, gestione di affitti brevi, check-io.it) e cosa
-   facciamo, in una o due frasi semplici: check-in e self check-in (anche la sera), pulizie e biancheria,
-   assistenza agli ospiti 24/7, annunci su più portali con prezzi dinamici, registrazione CIN.
+1. Presentazione: saluto, chi scrive e chi siamo: CHECK-iO (check-io.it) è un property manager, cioè gestisce
+   per conto del proprietario tutto l'affitto breve del suo appartamento, così lui non deve pensarci. In una o
+   due frasi semplici: annunci sui portali con prezzi dinamici, prenotazioni, accoglienza e assistenza agli
+   ospiti 24/7, registrazione CIN; il proprietario incassa senza occuparsi della gestione.
 2. La sua struttura: perché scriviamo proprio a lui (abbiamo trovato la sua struttura e il suo contatto tra i
    dati pubblici online: dillo in modo semplice, con la parola "pubblici") e cosa abbiamo visto, con dati veri
    dell'analisi: voto e numero di recensioni pubbliche; se ci sono recensioni lette, i problemi che emergono (temi
    negativi, con quante volte su quante lette) e cosa apprezzano gli ospiti; se non ci sono recensioni lette,
    i segnali della struttura (poche recensioni, nessun sito proprio, pochi portali).
    Riporta in dettaglio_usato i fatti che hai usato.
-3. Come CHECK-iO risolverebbe proprio quei punti, in una frase (check-in: self check-in o persona sul posto
-   anche la sera; pulizia: squadra e controlli; comunicazione: assistenza 24/7; visibilità e occupazione: più
-   portali e prezzi dinamici) e un vantaggio per lui (tempo libero, recensioni migliori, più prenotazioni).
+3. Come, affidando a noi la gestione, quei punti verrebbero seguiti da CHECK-iO, in una frase (check-in: self
+   check-in o persona sul posto anche la sera; pulizia: la seguiamo noi con controlli; comunicazione: assistenza
+   24/7; visibilità e occupazione: più portali e prezzi dinamici) e un vantaggio per lui (tempo libero,
+   recensioni migliori, più prenotazioni).
 4. {variante}
 5. Come dire no, con una frase semplice: se preferisce non essere ricontattato basta scriverlo e non lo
    ricontatteremo.
@@ -215,6 +217,9 @@ Regole (obbligatorie):
   "10 minuti"; nella versione B (chiacchierata di 10 minuti) non proporre l'analisi gratuita.
 - Se recensioni_lette è 0 non hai letto recensioni: non dirlo e non citare problemi degli ospiti; usa solo voto,
   numero di recensioni e i segnali della scheda e del sito.
+- Proponiamo la gestione completa dell'appartamento (property management), mai servizi singoli: non
+  presentarci come impresa di pulizie o di manutenzioni e non offrire solo pulizie, solo check-in o solo
+  manutenzioni.
 - Della burocrazia cita solo "registrazione CIN": non elencare Alloggiati Web, tassa di soggiorno, ISTAT o altri
   adempimenti.
 - Non nominare Google, Google Maps né la "scheda": niente "ho visto la sua casa su Maps" o "recensioni su

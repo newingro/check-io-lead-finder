@@ -87,7 +87,8 @@ def analysis_data(score: int = 80, exclude: bool = False) -> dict[str, Any]:
 
 
 GOOD_WHATSAPP = (
-    "Buongiorno, sono Matteo di CHECK-iO: gestiamo affitti brevi (check-io.it), dal check-in alle pulizie.\n"
+    "Buongiorno, sono Matteo di CHECK-iO (check-io.it): siamo un property manager e gestiamo per i proprietari "
+    "tutto l'affitto breve del loro appartamento.\n"
     "Le scrivo perché ho trovato la sua struttura tra i dati pubblici online: gli ospiti lodano la posizione, "
     "ma 2 delle 5 recensioni che ho letto parlano di attese al check-in.\n"
     "Con noi il check-in si fa in self check-in o con una persona sul posto anche la sera.\n"
@@ -97,7 +98,7 @@ GOOD_WHATSAPP = (
 )
 GOOD_EMAIL_BODY = (
     "Buongiorno,\n"
-    "sono Matteo di CHECK-iO, ci occupiamo di gestione di affitti brevi (check-io.it).\n"
+    "sono Matteo di CHECK-iO (check-io.it), property manager: ci occupiamo della gestione completa di affitti brevi.\n"
     "Gestiamo check-in, pulizie, assistenza agli ospiti 24/7, prezzi dinamici e registrazione CIN.\n"
     "Ho trovato la sua struttura tra i dati pubblici online e ho letto le recensioni pubbliche.\n"
     "Gli ospiti apprezzano la posizione; 2 recensioni su 5 parlano di attese al check-in.\n"
@@ -357,6 +358,13 @@ def test_controlli_messaggio_buono_e_cattivo():
     maps["email"] = {**maps["email"], "corpo": GOOD_EMAIL_BODY.replace("prezzi dinamici", "Alloggiati Web, ISTAT")}
     joined = " ".join(check_messages(maps, sender=SENDER, allowed=allowed))
     assert "non nominare Google o Maps" in joined and "solo la registrazione CIN" in joined
+    cleaning = good_messages()
+    cleaning["whatsapp"] = GOOD_WHATSAPP.replace(
+        "siamo un property manager e gestiamo per i proprietari tutto l'affitto breve del loro appartamento",
+        "facciamo pulizie e check-in per case vacanze",
+    )
+    joined = " ".join(check_messages(cleaning, sender=SENDER, allowed=allowed))
+    assert "property manager" in joined
 
 
 # ── Analisi ──────────────────────────────────────────────────

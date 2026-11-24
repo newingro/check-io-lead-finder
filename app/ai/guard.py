@@ -82,6 +82,8 @@ def _written_checks(label: str, text: str, sender: str, allowed: set[str], min_l
         problems.append(f"{label}: manca chi siamo (CHECK-iO)")
     elif "check-io" not in " ".join(lines[:2]).lower():
         problems.append(f"{label}: la presentazione di CHECK-iO va all'inizio")
+    if not re.search(r"gestion|gestiam|gestisc|property manag", " ".join(lines[:3]).lower()):
+        problems.append(f"{label}: presentaci all'inizio come property manager (gestione completa dell'appartamento)")
     if "pubblic" not in lower:
         problems.append(f"{label}: manca come l'abbiamo trovato (dati pubblici online)")
     if "google" in lower or re.search(r"\bmaps\b", lower):
