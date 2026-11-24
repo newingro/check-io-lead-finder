@@ -89,12 +89,21 @@ class FoundPlace:
     types: list[str] = field(default_factory=list)
     business_status: str | None = None
     exclusion: str | None = None  # motivo per non considerarla: hotel, chiusa…
+    reviews_raw: int = 0  # recensioni ricevute da Google, anche senza testo (solo per diagnostica)
 
 
 @dataclass(frozen=True)
 class SearchResult:
     places: list[FoundPlace]
     pages: int
+
+    @property
+    def reviews_raw(self) -> int:
+        return sum(p.reviews_raw for p in self.places)
+
+    @property
+    def reviews_text(self) -> int:
+        return sum(len(p.reviews) for p in self.places)
 
 
 def platform_of(url: str | None) -> str | None:
@@ -160,7 +169,8 @@ def parse_place(place: dict[str, Any]) -> FoundPlace:
         ratings=ratings,
         listing_urls=listing_urls,
     )
-    return FoundPlace(candidate, _reviews(place), primary, types, status, exclusion)
+    raw = len(place.get("reviews") or [])
+    return FoundPlace(candidate, _reviews(place), primary, types, status, exclusion, raw)
 
 
 class PlacesClient:

@@ -67,6 +67,8 @@ class RoundReport:
     ai_budget: Decimal = Decimal(0)
     google_requests: int = 0
     google_limit: int = 0
+    reviews_raw: int = 0
+    reviews_text: int = 0
     notes: list[str] = field(default_factory=list)
 
 
@@ -82,13 +84,20 @@ def format_report(r: RoundReport, timezone: ZoneInfo) -> str:
         lines.append(f"   Richieste Google del mese: {r.google_requests} su {r.google_limit} (gratuite)")
     if r.results:
         lines.append(f"   nuove {r.new} · già in memoria {r.known} · escluse {r.excluded}")
+        lines.append(f"   recensioni ricevute da Google: {r.reviews_text}")
     lines.append(f"🧠 Analizzate {r.analyzed} · scartate {r.discarded}" + (f" · errori {r.ai_errors}" if r.ai_errors else ""))
     lines.append(f"📨 Schede inviate {r.proposed}" + (f" · in attesa di qualcuno di turno {r.waiting}" if r.waiting else ""))
     lines.append(f"💶 Spesa del giro: ricerche {euro(r.search_cost)} · AI {euro(r.ai_cost)}")
     lines.append(
         f"   Mese: ricerche {euro(r.month_search)} su {euro(r.search_budget)} · AI {euro(r.month_ai)} su {euro(r.ai_budget)}"
     )
-    lines += [f"⚠️ {note}" for note in r.notes]
+    notes = list(r.notes)
+    if r.results and not r.reviews_text:
+        notes.append(
+            "Google non ha mandato recensioni: l'analisi si basa solo su voto, numero di recensioni e sito, "
+            "quindi i punteggi restano bassi."
+        )
+    lines += [f"⚠️ {note}" for note in notes]
     return "\n".join(lines)
 
 
@@ -236,8 +245,10 @@ class RoundService:
                 await self.repo.finish_search_run(
                     run_id, status="completata", results=len(result.places), new=len(outcome.new_ids),
                     known=outcome.already_known, excluded=len(excluded) + outcome.opted_out,
-                    pages=result.pages, cost_eur=cost,
+                    pages=result.pages, cost_eur=cost, reviews_raw=result.reviews_raw, reviews_text=result.reviews_text,
                 )
+                report.reviews_raw += result.reviews_raw
+                report.reviews_text += result.reviews_text
 
         # 2. Sito delle strutture nuove
         if reviews and self.http is not None:
@@ -253,8 +264,8 @@ class RoundService:
         if self.analysis is None:
             report.notes.append("Analisi AI spenta: manca ANTHROPIC_API_KEY nelle variabili di Railway.")
         else:
-            limit = max(settings.cards_per_run * 3, len(reviews), 10)
-            queue = await self.repo.properties_by_status("nuovo", limit)
+            queue_size = max(settings.cards_per_run * 3, len(reviews), 10)
+            queue = await self.repo.properties_by_status("nuovo", queue_size)
             queue.sort(key=lambda p: p.id not in reviews)  # prima quelle appena trovate
             for prop in queue:
                 prop_reviews = reviews.get(prop.id)

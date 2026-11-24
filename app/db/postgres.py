@@ -513,12 +513,15 @@ class PostgresRepository:
         pages: int,
         cost_eur: Decimal,
         error: str | None = None,
+        reviews_raw: int | None = None,
+        reviews_text: int | None = None,
     ) -> None:
         async with self.pool.connection() as conn:
             await conn.execute(
                 "update search_runs set finished_at = now(), status = %s, results_count = %s, new_count = %s, "
-                "known_count = %s, excluded_count = %s, pages = %s, cost_eur = %s, error = %s where id = %s",
-                (status, results, new, known, excluded, pages, cost_eur, error, run_id),
+                "known_count = %s, excluded_count = %s, pages = %s, cost_eur = %s, error = %s, reviews_raw = %s, "
+                "reviews_text = %s where id = %s",
+                (status, results, new, known, excluded, pages, cost_eur, error, reviews_raw, reviews_text, run_id),
             )
 
     async def record_ai_usage(

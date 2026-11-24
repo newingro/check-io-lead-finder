@@ -156,6 +156,7 @@ class FakePlaces:
         self.pages = pages
         self.fail = fail
         self.calls: list[tuple[str, tuple]] = []
+        self.details_calls = 0
 
     async def search(self, query: str, bounds: tuple, max_pages: int = 3) -> SearchResult:
         self.calls.append((query, bounds))
@@ -165,6 +166,7 @@ class FakePlaces:
         return SearchResult([parse_place(p) for p in self.places], min(self.pages, max_pages))
 
     async def details(self, place_id: str):
+        self.details_calls += 1
         return parse_place(next(p for p in self.places if p["id"] == place_id))
 
 
@@ -886,3 +888,46 @@ def test_numero_ufficiale_nella_firma_e_nei_fatti():
     assert "tel. +39 352 255 4502" in message_system("A", SENDER)
     allowed = allowed_numbers(analysis_data())
     assert check_messages(good_messages(), sender=SENDER, allowed=allowed) == []  # la firma col numero è ammessa
+
+
+async def test_le_recensioni_arrivano_all_analisi_e_si_contano():
+    repo, _ = await make_repo(google_monthly_requests=1400)
+    no_text = google_place("g2", "Rifugio", phone="+39 0573 123456")
+    no_text["reviews"] = [{"rating": 5, "publishTime": "2026-10-01T10:00:00Z"}]  # solo voto, senza testo
+    without = google_place("g3", "Chalet", phone="+39 0573 654321")
+    del without["reviews"]  # Google non manda il campo
+    fake = FakeAnthropic()
+    service, notifier = make_round(repo, FakePlaces([google_place("g1", "Baita"), no_text, without]), fake, price=None)
+    report = await service.run("prova")
+    prompts = [json.dumps(r["messages"], ensure_ascii=False) for r in fake.requests
+               if "segnali_opportunita" in r["output_config"]["format"]["schema"]["properties"]]
+    assert len(prompts) == 3 and sum("check-in in ritardo" in p for p in prompts) == 1
+    assert all("Mario Rossi" not in p for p in prompts)
+    run = next(iter(repo.search_runs.values()))
+    assert run["reviews_raw"] == 2 and run["reviews_text"] == 1
+    assert report.reviews_raw == 2 and report.reviews_text == 1
+    assert "recensioni ricevute da Google: 1" in notifier.summaries[0]
+    assert "Google non ha mandato recensioni" not in notifier.summaries[0]
+
+
+async def test_avviso_se_google_non_manda_recensioni():
+    repo, _ = await make_repo(google_monthly_requests=1400)
+    place = google_place("g1", "Baita")
+    del place["reviews"]
+    service, notifier = make_round(repo, FakePlaces([place]), FakeAnthropic(), price=None)
+    await service.run("prova")
+    assert "recensioni ricevute da Google: 0" in notifier.summaries[0]
+    assert "Google non ha mandato recensioni" in notifier.summaries[0]
+
+
+async def test_coda_vecchia_rispetta_il_tetto_delle_richieste_gratuite():
+    repo, _ = await make_repo(google_monthly_requests=2)
+    places = FakePlaces([google_place("g1", "Baita")])
+    first, _ = make_round(repo, places, None, price=None)  # analisi spenta: la struttura resta in coda
+    await first.run("prova")
+    assert [r["status"] for r in repo.properties.values()] == ["nuovo"]
+    second, notifier = make_round(repo, places, FakeAnthropic(), price=None)
+    report = await second.run("prova")
+    # la ricerca usa l'ultima richiesta gratuita (2 su 2): niente richiesta in più per rileggere le recensioni
+    assert report.google_requests == 2 and places.details_calls == 0
+    assert report.analyzed == 1

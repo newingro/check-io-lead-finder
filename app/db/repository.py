@@ -122,6 +122,8 @@ class Repository(Protocol):
         pages: int,
         cost_eur: Decimal,
         error: str | None = None,
+        reviews_raw: int | None = None,
+        reviews_text: int | None = None,
     ) -> None: ...
     async def record_ai_usage(
         self,

@@ -334,10 +334,12 @@ class InMemoryRepository:
         pages: int,
         cost_eur: Decimal,
         error: str | None = None,
+        reviews_raw: int | None = None,
+        reviews_text: int | None = None,
     ) -> None:
         self.search_runs[run_id].update(
             status=status, results=results, new=new, known=known, excluded=excluded, pages=pages,
-            cost_eur=cost_eur, error=error,
+            cost_eur=cost_eur, error=error, reviews_raw=reviews_raw, reviews_text=reviews_text,
         )
 
     async def record_ai_usage(
