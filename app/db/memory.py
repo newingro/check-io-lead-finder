@@ -311,6 +311,9 @@ class InMemoryRepository:
         ai = sum((u["cost_eur"] for u in self.ai_usage if u["created_at"] >= since), Decimal(0))
         return Decimal(search), Decimal(ai)
 
+    async def month_google_requests(self, since: datetime) -> int:
+        return sum(int(r.get("pages") or 0) for r in self.search_runs.values() if r["started_at"] >= since)
+
     async def start_search_run(self, *, zone: str, query: str, cell: str | None, provincia: str | None) -> str:
         run_id = str(uuid.uuid4())
         self.search_runs[run_id] = {

@@ -231,3 +231,14 @@ export async function loadProperty(id: string): Promise<{ property: PropertyDeta
     events: (events ?? []) as PropertyEvent[],
   };
 }
+
+
+/** Richieste fatte a Google dall'inizio del mese (solo il titolare può leggere le ricerche). */
+export async function loadGoogleRequestsThisMonth(): Promise<number | null> {
+  const supabase = await createClient();
+  const now = new Date();
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const { data, error } = await supabase.from("search_runs").select("pages").gte("started_at", since);
+  if (error) return null;
+  return (data ?? []).reduce((sum, row) => sum + (Number(row.pages) || 0), 0);
+}

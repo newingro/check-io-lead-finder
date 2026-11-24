@@ -260,6 +260,8 @@ async def test_strutture_costi_e_schede_sul_database(repo):
         cost_eur=Decimal("0.014"), property_id=None, request_id="req_x",
     )
     assert await repository.month_costs(since) == (Decimal("0.0400"), Decimal("0.01400"))
+    assert await repository.month_google_requests(since) == 1
+    assert (await repository.get_settings()).google_monthly_requests == 0
 
     candidate = Candidate(name="Baita", address="Via Baita 1, Abetone", google_place_id="g1", phone="333 1234567")
     pid = await repository.insert_property(candidate, fingerprints(candidate), cell="980_170", provincia="047",

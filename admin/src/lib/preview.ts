@@ -19,6 +19,7 @@ export const previewSettings: SettingsRow = {
   min_score: 60,
   cards_per_run: 5,
   searches_per_run: 4,
+  google_monthly_requests: 0,
   run_days: ["lun", "mar", "mer", "gio", "ven"],
   run_times: ["10:00", "12:30", "15:00"],
   followup_days: 5,

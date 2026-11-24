@@ -62,6 +62,8 @@ class RoundReport:
     month_ai: Decimal = Decimal(0)
     search_budget: Decimal = Decimal(0)
     ai_budget: Decimal = Decimal(0)
+    google_requests: int = 0
+    google_limit: int = 0
     notes: list[str] = field(default_factory=list)
 
 
@@ -73,6 +75,8 @@ def format_report(r: RoundReport, timezone: ZoneInfo) -> str:
     when = r.started_at.astimezone(timezone).strftime("%H:%M")
     lines = [f"🛰 Giro delle {when} ({r.trigger})"]
     lines.append(f"🔎 Ricerche Google: {r.searches} ({r.pages} pagine) · strutture trovate {r.results}")
+    if r.google_limit:
+        lines.append(f"   Richieste Google del mese: {r.google_requests} su {r.google_limit} (gratuite)")
     if r.results:
         lines.append(f"   nuove {r.new} · già in memoria {r.known} · escluse {r.excluded}")
     lines.append(f"🧠 Analizzate {r.analyzed} · scartate {r.discarded}" + (f" · errori {r.ai_errors}" if r.ai_errors else ""))
@@ -154,13 +158,17 @@ class RoundService:
             ai_budget=Decimal(settings.monthly_ai_budget_eur),
         )
         reviews: dict[str, list[dict]] = {}
+        limit = settings.google_monthly_requests
+        google_used = await self.repo.month_google_requests(since)
+        report.google_limit = limit
 
         # 1. Ricerca
         if self.places is None:
             report.notes.append("Ricerca su Google spenta: manca GOOGLE_MAPS_API_KEY nelle variabili di Railway.")
-        elif self.price is None:
+        elif self.price is None and settings.google_monthly_requests <= 0:
             report.notes.append(
-                "Ricerca su Google spenta: manca GOOGLE_TEXT_SEARCH_USD_PER_1000 (prezzo di Google, per il conto della spesa)."
+                "Ricerca su Google spenta: nel gestionale (Impostazioni) imposta il massimo di richieste Google al mese "
+                "(le gratuite)."
             )
         elif settings.searches_per_run <= 0:
             report.notes.append("Ricerche per giro impostate a 0 nel gestionale.")
@@ -170,16 +178,25 @@ class RoundService:
                 report.notes.append("Nessuna zona attiva da cercare: impostala dal gestionale (Zone).")
             failures = 0
             for target in targets:
-                if month_search + self.page_cost * MAX_PAGES > report.search_budget:
+                max_pages = MAX_PAGES
+                if limit > 0:
+                    max_pages = min(MAX_PAGES, limit - google_used)
+                    if max_pages <= 0:
+                        report.notes.append(
+                            f"Raggiunte le {limit} richieste Google del mese: ricerche ferme fino al mese prossimo."
+                        )
+                        break
+                if self.price is not None and month_search + self.page_cost * max_pages > report.search_budget:
                     report.notes.append("Tetto di spesa del mese per le ricerche raggiunto: ricerche ferme.")
                     break
                 run_id = await self.repo.start_search_run(
                     zone=target.zone, query=target.query, cell=target.cell, provincia=target.provincia
                 )
                 try:
-                    result = await self.places.search(target.query, target.bounds)
+                    result = await self.places.search(target.query, target.bounds, max_pages=max_pages)
                 except (PlacesError, httpx.HTTPError) as exc:
                     failures += 1
+                    google_used += 1  # per prudenza si conta anche la richiesta fallita
                     await self.repo.finish_search_run(
                         run_id, status="errore", results=0, new=0, known=0, excluded=0, pages=1,
                         cost_eur=Decimal(0), error=str(exc)[:500],
@@ -189,6 +206,7 @@ class RoundService:
                         break
                     continue
                 cost = self.page_cost * result.pages
+                google_used += result.pages
                 month_search += cost
                 report.search_cost += cost
                 report.searches += 1
@@ -235,8 +253,12 @@ class RoundService:
             queue.sort(key=lambda p: p.id not in reviews)  # prima quelle appena trovate
             for prop in queue:
                 prop_reviews = reviews.get(prop.id)
-                if prop_reviews is None and prop.google_place_id and self.places and self.price:
+                can_fetch = self.places is not None and (self.price is not None or limit > 0)
+                if limit > 0 and google_used >= limit:
+                    can_fetch = False
+                if prop_reviews is None and prop.google_place_id and can_fetch:
                     prop_reviews, cost = await self.fetch_reviews(prop)
+                    google_used += 1
                     month_search += cost
                     report.search_cost += cost
                 try:
@@ -258,6 +280,7 @@ class RoundService:
         _, month_ai = await self.repo.month_costs(since)
         report.month_search = month_search
         report.month_ai = month_ai
+        report.google_requests = google_used
         report.ai_cost = month_ai - month_ai_before
         return report
 

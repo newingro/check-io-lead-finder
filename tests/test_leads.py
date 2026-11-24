@@ -157,11 +157,12 @@ class FakePlaces:
         self.fail = fail
         self.calls: list[tuple[str, tuple]] = []
 
-    async def search(self, query: str, bounds: tuple) -> SearchResult:
+    async def search(self, query: str, bounds: tuple, max_pages: int = 3) -> SearchResult:
         self.calls.append((query, bounds))
+        self.max_pages_seen = max_pages
         if self.fail:
             raise PlacesError("Google ha risposto 403: API key not valid")
-        return SearchResult([parse_place(p) for p in self.places], self.pages)
+        return SearchResult([parse_place(p) for p in self.places], min(self.pages, max_pages))
 
     async def details(self, place_id: str):
         return parse_place(next(p for p in self.places if p["id"] == place_id))
@@ -444,7 +445,7 @@ async def test_giro_senza_prezzo_senza_chiavi_e_tetto_ricerche():
     repo, _ = await make_repo()
     service, notifier = make_round(repo, FakePlaces([google_place("g1", "Baita")]), None, price=None)
     report = await service.run("prova")
-    assert report.searches == 0 and any("GOOGLE_TEXT_SEARCH_USD_PER_1000" in n for n in report.notes)
+    assert report.searches == 0 and any("richieste Google al mese" in n for n in report.notes)
     assert any("ANTHROPIC_API_KEY" in n for n in report.notes)
 
     repo2, _ = await make_repo(monthly_search_budget_eur=Decimal("0.05"))
@@ -728,7 +729,7 @@ async def test_errore_imprevisto_nel_giro_finisce_nel_riepilogo():
     repo, _ = await make_repo()
 
     class Broken(FakePlaces):
-        async def search(self, query, bounds):
+        async def search(self, query, bounds, max_pages=3):
             raise RuntimeError("guasto")
 
     service, notifier = make_round(repo, Broken([]), None)
@@ -771,7 +772,7 @@ async def test_verifica_chiave_google(response, ok, expected):
 async def test_verifica_chiave_anthropic_e_registro():
     import anthropic
 
-    from app.services.keycheck import check_anthropic, check_google, format_statuses
+    from app.services.keycheck import check_anthropic, check_google, format_statuses, google_mode
 
     request = httpx.Request("GET", "https://api.anthropic.com/v1/models/claude-opus-5-5")
 
@@ -812,11 +813,12 @@ async def test_verifica_chiave_anthropic_e_registro():
     )
     replies = await world.send(handlers.verifica, user_id=1001)
     assert "✅ Anthropic (Claude): chiave valida" in replies[1] and "✅ Google Maps: chiave valida" in replies[1]
-    assert "Prezzo Google non impostato" in replies[1]
+    assert "Ricerca Google spenta" in replies[1]
     audit = world.repo.audit[-1]
     assert audit["action"] == "verifica_chiavi" and audit["details"]["Google Maps"]["ok"] is True
     assert audit["details"]["prezzo_google_impostato"] is False
-    assert "prezzo" in format_statuses([], False).lower()
+    assert "al massimo 200 richieste" in format_statuses([], google_mode(False, 200))
+    assert "spenta" in google_mode(False, 0) and "prezzo impostato" in google_mode(True, 0)
 
 
 async def test_credito_anthropic_esaurito_messaggio_chiaro():
@@ -836,3 +838,29 @@ async def test_credito_anthropic_esaurito_messaggio_chiaro():
     with pytest.raises(AIError) as err:
         await ai.ask(purpose="analisi", system="s", prompt="p", schema=ANALYSIS_SCHEMA)
     assert "Credito Anthropic esaurito" in str(err.value)
+
+
+
+# ── Google gratis: limite di richieste al mese ───────────────
+async def test_google_gratis_senza_prezzo_conta_le_richieste_e_si_ferma():
+    repo, _ = await make_repo(google_monthly_requests=4, searches_per_run=3, search_queries=["casa vacanze", "b&b"])
+    places = FakePlaces([google_place("g1", "Baita")], pages=2)
+    service, notifier = make_round(repo, places, FakeAnthropic(), price=None)
+    report = await service.run("prova")
+    # 1ª ricerca: 2 pagine (2/4) · 2ª: al massimo 2 pagine (4/4) · 3ª: ferma
+    assert report.searches == 2 and report.pages == 4 and places.max_pages_seen == 2
+    assert report.search_cost == Decimal(0) and report.google_requests == 4 and report.google_limit == 4
+    assert any("Raggiunte le 4 richieste Google" in n for n in report.notes)
+    assert "Richieste Google del mese: 4 su 4 (gratuite)" in notifier.summaries[0]
+    assert await repo.month_google_requests(NOW - timedelta(days=1)) == 4
+
+    report2 = await service.run("prova")  # mese già esaurito: nessuna richiesta
+    assert report2.searches == 0 and len(places.calls) == 2
+
+
+async def test_google_gratis_ultima_ricerca_limitata_alle_richieste_rimaste():
+    repo, _ = await make_repo(google_monthly_requests=1)
+    places = FakePlaces([google_place("g1", "Baita")], pages=3)
+    service, _ = make_round(repo, places, FakeAnthropic(), price=None)
+    report = await service.run("prova")
+    assert places.max_pages_seen == 1 and report.pages == 1 and report.google_requests == 1

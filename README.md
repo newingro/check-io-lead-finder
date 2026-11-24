@@ -23,6 +23,7 @@ schede). Prossima: fase 5 (telefonate, esiti, richiami, follow-up, riepilogo ser
 | `/cerca` | titolare | fa partire subito un giro (ricerca, analisi, schede) |
 | `/analizza link + testo` | team | analizza un annuncio trovato a mano (incolla il testo: il bot non apre i portali) |
 | `/annulla` | team | annulla una modifica in corso |
+| `/verifica` | titolare | controlla le chiavi di Google e Anthropic, senza spendere |
 
 Chi non fa parte del team riceve solo un messaggio di cortesia. Il bot parte **in pausa**.
 Le schede delle strutture arrivano con i pulsanti (vedi «Ricerca, analisi e schede»).
@@ -128,6 +129,10 @@ sempre manuale. Ogni passaggio finisce nello storico della struttura.
 
 Comandi: `/cerca` (titolare, un giro subito), `/analizza link + testo incollato` (tutti: analizza un annuncio
 trovato a mano; il bot non apre i portali), `/annulla`.
+
+**Google gratis**: nel gestionale (Impostazioni) «Massimo richieste Google al mese» = le richieste gratuite di Google.
+Il bot conta ogni richiesta (anche quelle fallite) e si ferma da solo raggiunto il numero; così la ricerca funziona
+anche senza `GOOGLE_TEXT_SEARCH_USD_PER_1000`. Con 0 e senza prezzo la ricerca Google resta spenta.
 
 **Tetti di spesa**: prima di ogni ricerca e di ogni chiamata AI si controlla la spesa del mese contro i tetti
 del gestionale. Consiglio: imposta anche un limite di richieste al giorno nella console di Google Cloud.

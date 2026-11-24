@@ -27,6 +27,7 @@ export const settingsSchema = z.object({
   call_retry_minutes: z.number().int().min(30).max(1440),
   monthly_ai_budget_eur: z.number().min(0).max(10000),
   monthly_search_budget_eur: z.number().min(0).max(10000),
+  google_monthly_requests: z.number().int().min(0).max(1000000),
   data_retention_months: z.number().int().min(1).max(60),
 });
 

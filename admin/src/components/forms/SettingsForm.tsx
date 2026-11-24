@@ -45,6 +45,7 @@ export function SettingsForm({ settings, canEdit }: { settings: SettingsInput; c
       call_retry_minutes: num("call_retry_minutes"),
       monthly_ai_budget_eur: num("monthly_ai_budget_eur"),
       monthly_search_budget_eur: num("monthly_search_budget_eur"),
+      google_monthly_requests: num("google_monthly_requests"),
       data_retention_months: num("data_retention_months"),
     };
     startTransition(async () => {
@@ -109,6 +110,15 @@ export function SettingsForm({ settings, canEdit }: { settings: SettingsInput; c
         <h2 className="text-lg font-semibold text-navy-900 sm:col-span-2">Costi e conservazione dei dati</h2>
         <NumberField name="monthly_ai_budget_eur" label="Tetto mensile AI (€)" min={0} max={10000} step={0.01} value={settings.monthly_ai_budget_eur} disabled={disabled} />
         <NumberField name="monthly_search_budget_eur" label="Tetto mensile ricerche (€)" min={0} max={10000} step={0.01} value={settings.monthly_search_budget_eur} disabled={disabled} />
+        <NumberField
+          name="google_monthly_requests"
+          label="Massimo richieste Google al mese"
+          hint="Le richieste gratuite di Google: pagina prezzi di Google Maps Platform → Places API → «Text Search Enterprise + Atmosphere» → richieste gratuite al mese. Raggiunto il numero il bot si ferma da solo. 0 = ricerca solo col prezzo impostato sul server."
+          min={0}
+          max={1000000}
+          value={settings.google_monthly_requests}
+          disabled={disabled}
+        />
         <NumberField name="data_retention_months" label="Conservazione dati (mesi)" hint="Dopo questo periodo le strutture vengono archiviate." min={1} max={60} value={settings.data_retention_months} disabled={disabled} />
       </fieldset>
 

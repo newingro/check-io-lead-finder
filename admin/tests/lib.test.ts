@@ -46,6 +46,7 @@ test("impostazioni: limiti e formati", () => {
     call_retry_minutes: 120,
     monthly_ai_budget_eur: 30,
     monthly_search_budget_eur: 30,
+    google_monthly_requests: 0,
     data_retention_months: 12,
   };
   assert.equal(settingsSchema.safeParse(ok).success, true);
@@ -54,4 +55,5 @@ test("impostazioni: limiti e formati", () => {
   assert.equal(settingsSchema.safeParse({ ...ok, run_days: [] }).success, false);
   assert.equal(settingsSchema.safeParse({ ...ok, searches_per_run: 0 }).success, true);
   assert.equal(settingsSchema.safeParse({ ...ok, searches_per_run: 51 }).success, false);
+  assert.equal(settingsSchema.safeParse({ ...ok, google_monthly_requests: -1 }).success, false);
 });

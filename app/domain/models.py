@@ -58,6 +58,7 @@ class Settings:
     updated_by: str | None = None
     updated_at: datetime | None = None
     searches_per_run: int = 4
+    google_monthly_requests: int = 0
 
 
 @dataclass(frozen=True)

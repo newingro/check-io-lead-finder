@@ -43,6 +43,7 @@ SETTINGS_FIELDS: list[tuple[str, str, Callable[[Any], str]]] = [
     ("min_score", "Punteggio minimo", str),
     ("cards_per_run", "Schede per giro", str),
     ("searches_per_run", "Ricerche Google per giro", str),
+    ("google_monthly_requests", "Richieste Google al mese (0 = nessun limite a numero)", str),
     ("run_days", "Giorni dei giri", _list),
     ("run_times", "Orari dei giri", _list),
     ("followup_days", "Follow-up dopo", _days),

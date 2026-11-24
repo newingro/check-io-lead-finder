@@ -92,10 +92,20 @@ async def check_anthropic(client: Any | None, model: str) -> KeyStatus:
     return KeyStatus("Anthropic (Claude)", True, f"chiave valida, modello {name} disponibile")
 
 
-def format_statuses(statuses: list[KeyStatus], price_set: bool) -> str:
+def google_mode(price_set: bool, monthly_requests: int) -> str:
+    if monthly_requests > 0:
+        return f"🔎 Ricerca Google: al massimo {monthly_requests} richieste al mese (poi si ferma da sola)."
+    if price_set:
+        return "🔎 Ricerca Google: conto della spesa col prezzo impostato e tetto in euro del gestionale."
+    return (
+        "➖ Ricerca Google spenta: nel gestionale (Impostazioni) imposta il massimo di richieste Google al mese, "
+        "cioè le gratuite. Nessuna spesa su Google."
+    )
+
+
+def format_statuses(statuses: list[KeyStatus], google_note: str) -> str:
     icon = {True: "✅", False: "❌", None: "➖"}
     lines = ["🔑 Verifica delle chiavi (nessuna spesa)"]
     lines += [f"{icon[s.ok]} {s.name}: {s.message}" for s in statuses]
-    if not price_set:
-        lines.append("➖ Prezzo Google non impostato: la ricerca automatica resta spenta (nessuna spesa su Google).")
+    lines.append(google_note)
     return "\n".join(lines)

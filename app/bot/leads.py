@@ -20,7 +20,7 @@ from app.domain.shifts import day_code
 from app.integrations.google_places import platform_of
 from app.integrations.website import _CIN
 from app.services.analysis import AnalysisService
-from app.services.keycheck import check_anthropic, check_google, format_statuses
+from app.services.keycheck import check_anthropic, check_google, format_statuses, google_mode
 from app.services.messages import MessageService
 from app.services.rounds import RoundService
 
@@ -342,12 +342,15 @@ async def run_key_check(app: Any) -> str:
         await check_anthropic(data.get("anthropic"), config.claude_model),
         await check_google(config.google_maps_api_key, data["http"]),
     ]
+    settings = await data["repo"].get_settings()
+    price_set = config.google_search_usd_per_1000 is not None
     await data["repo"].add_audit(
         None, "bot", "bot", "verifica_chiavi",
         {s.name: {"ok": s.ok, "esito": s.message} for s in statuses}
-        | {"prezzo_google_impostato": config.google_search_usd_per_1000 is not None},
+        | {"prezzo_google_impostato": price_set, "richieste_google_al_mese": settings.google_monthly_requests,
+           "modello": config.claude_model},
     )
-    return format_statuses(statuses, config.google_search_usd_per_1000 is not None)
+    return format_statuses(statuses, google_mode(price_set, settings.google_monthly_requests))
 
 
 async def startup_key_check(app: Any) -> None:

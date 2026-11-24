@@ -179,7 +179,7 @@ class PostgresRepository:
                 "select zones, property_types, search_queries, min_score, cards_per_run, run_times, run_days, "
                 "followup_days, max_followups, archive_after_days, max_call_attempts, call_retry_minutes, "
                 "monthly_ai_budget_eur, monthly_search_budget_eur, data_retention_months, version, updated_by, "
-                "updated_at, searches_per_run from finder_settings where id = 1"
+                "updated_at, searches_per_run, google_monthly_requests from finder_settings where id = 1"
             )
             row = await cur.fetchone()
         return Settings(**row)
@@ -483,6 +483,14 @@ class PostgresRepository:
             )
             row = await cur.fetchone()
         return Decimal(row["ricerche"]), Decimal(row["ai"])
+
+    async def month_google_requests(self, since: datetime) -> int:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "select coalesce(sum(pages), 0) as n from search_runs where started_at >= %s", (since,)
+            )
+            row = await cur.fetchone()
+        return int(row["n"])
 
     async def start_search_run(self, *, zone: str, query: str, cell: str | None, provincia: str | None) -> str:
         async with self.pool.connection() as conn:

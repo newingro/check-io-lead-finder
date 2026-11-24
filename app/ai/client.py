@@ -39,6 +39,8 @@ FALLBACK_PRICE = max(PRICES_USD_PER_MTOK.values())
 CACHE_WRITE_FACTOR = Decimal("1.25")
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+# Modelli con la riserva automatica lato server (Haiku non ce l'ha).
+FALLBACK_MODELS = {"claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5-2"}
 
 
 class AIError(Exception):
@@ -95,7 +97,7 @@ class ClaudeJSON:
         self.effort = effort
         self.eur_per_usd = eur_per_usd
         self.clock = clock or (lambda: datetime.now(UTC))
-        self.use_fallbacks = True
+        self.use_fallbacks = model in FALLBACK_MODELS
 
     async def check_budget(self) -> None:
         settings = await self.repo.get_settings()
