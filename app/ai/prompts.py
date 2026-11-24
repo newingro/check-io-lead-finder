@@ -207,7 +207,8 @@ Puoi usare solo numeri presenti nei dati della struttura (voto, recensioni, cont
 
 Lunghezza:
 - whatsapp: 4-6 righe brevi, senza emoji in eccesso.
-- email: oggetto breve (massimo 8 parole) + corpo di 6-10 righe, con saluto e firma ({mittente}, CHECK-iO, check-io.it).
+- email: oggetto breve (massimo 8 parole) + corpo di 6-10 righe, con saluto e firma ({mittente}, CHECK-iO,
+  check-io.it, tel. +39 352 255 4502).
 - telefono (scheda per la telefonata, la legge chi chiama): frase d'apertura, 2 domande, e le risposte alle
   obiezioni tipiche: ci_penso_io ("ci penso io"), ho_gia_provato_agenzia, non_voglio_dare_le_chiavi,
   quanto_costa. Solo al telefono si può dire che la commissione è indicativa tra il 10 e il 15%, definita per

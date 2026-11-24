@@ -102,7 +102,7 @@ GOOD_EMAIL_BODY = (
     "Gestiamo check-in, pulizie, assistenza agli ospiti 24/7 e adempimenti come Alloggiati Web e tassa di soggiorno.\n"
     "Le farebbe piacere un'analisi gratuita della sua struttura?\n"
     "Se preferisce non essere ricontattato, mi basta una risposta e non la ricontatterò.\n"
-    "Matteo D'Amico — CHECK-iO, check-io.it"
+    "Matteo D'Amico — CHECK-iO, check-io.it, tel. +39 352 255 4502"
 )
 
 
@@ -876,3 +876,13 @@ async def test_una_ricerca_una_sola_richiesta_a_google():
     report = await service.run("prova")
     assert report.searches == 15 and report.pages == 15 and places.max_pages_seen == 1
     assert report.google_requests == 15 and "15 su 1400" in notifier.summaries[0]
+
+
+
+def test_numero_ufficiale_nella_firma_e_nei_fatti():
+    from app.ai.prompts import offer_text
+
+    assert "+39 352 255 4502" in offer_text() and "351 968" not in offer_text()
+    assert "tel. +39 352 255 4502" in message_system("A", SENDER)
+    allowed = allowed_numbers(analysis_data())
+    assert check_messages(good_messages(), sender=SENDER, allowed=allowed) == []  # la firma col numero è ammessa

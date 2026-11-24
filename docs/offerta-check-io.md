@@ -5,7 +5,7 @@ niente numeri, promesse o servizi non confermati.** Aggiornare questo file quand
 
 ## Chi siamo
 - CHECK-iO, nome commerciale di Immobiliare Monte Olimpo S.r.l. — property management per affitti brevi.
-- Sito: https://check-io.it · Telefono e WhatsApp: +39 351 968 8178
+- Sito: https://check-io.it · Telefono e WhatsApp (numero ufficiale): +39 352 255 4502
 - Titolare e referente commerciale: Matteo D'Amico (contatti lun–ven, 9–17).
 
 ## Servizi (tutti confermati)

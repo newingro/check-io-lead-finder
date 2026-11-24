@@ -31,8 +31,8 @@ OPT_OUT = re.compile(
     re.IGNORECASE,
 )
 NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
-# "10 minuti", "24/7" e il numero di CHECK-iO (+39 351 968 8178), se qualcuno lo mette in firma.
-ALWAYS_ALLOWED = {"10", "24", "7", "39", "351", "968", "8178"}
+# "10 minuti", "24/7" e il numero ufficiale di CHECK-iO (+39 352 255 4502), che va nella firma delle email.
+ALWAYS_ALLOWED = {"10", "24", "7", "39", "352", "255", "4502"}
 
 
 def _lines(text: str) -> list[str]:
