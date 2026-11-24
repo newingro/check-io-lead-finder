@@ -250,6 +250,17 @@ Fatti su CHECK-iO (usa solo questi):
 """
 
 
+EXTRACT_SCHEMA = _obj({"nome": _STR, "comune": _STR, "indirizzo": _STR, "provincia": _STR})
+
+EXTRACT_SYSTEM = """Ricevi il testo di un annuncio di affitto breve (Booking, Airbnb, Trivago…) copiato a mano da un
+commerciale. Estrai solo ciò che è scritto nel testo, senza inventare nulla:
+- nome: il nome della struttura come appare nell'annuncio (senza frasi pubblicitarie);
+- comune: il comune o la città dove si trova;
+- indirizzo: via e numero, se sono scritti;
+- provincia: la provincia, se è scritta.
+Se un dato non c'è, scrivi una stringa vuota."""
+
+
 def analysis_system() -> str:
     return ANALYSIS_SYSTEM.format(offerta=offer_text())
 

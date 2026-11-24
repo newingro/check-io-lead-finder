@@ -10,7 +10,7 @@ from app.ai.client import AIError, BudgetExceeded, ClaudeJSON
 from app.ai.prompts import ANALYSIS_SCHEMA, analysis_system, as_prompt
 from app.db.repository import Repository
 from app.domain.dedupe import is_mobile
-from app.domain.models import Property
+from app.domain.models import Property, short_term_proof
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +90,12 @@ class AnalysisService:
         if require_contacts and not is_mobile(prop.phone_normalized):
             # per ora si lavora solo su WhatsApp: niente analisi (e niente spesa) per fissi o sola email
             await self.discard(prop, "senza_cellulare", "Nessun cellulare pubblico (solo fisso o email): niente WhatsApp.")
+            return await self.repo.get_property(prop.id) or prop
+        if require_contacts and not short_term_proof(prop.cin, prop.listing_urls):
+            # si lavora solo su chi affitta davvero sulle piattaforme: annuncio su Booking/Airbnb… o CIN
+            await self.discard(
+                prop, "senza_affitto_breve", "Nessun segno di affitto breve (né annunci su Booking/Airbnb né CIN)."
+            )
             return await self.repo.get_property(prop.id) or prop
         try:
             result = await self.ai.ask(

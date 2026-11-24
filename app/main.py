@@ -21,6 +21,7 @@ from app.services.analysis import AnalysisService
 from app.services.control import ControlService
 from app.services.linking import LinkingService
 from app.services.messages import MessageService
+from app.services.pasted import PastedListingService
 from app.services.radar import RadarService
 from app.services.rounds import RoundService
 from app.services.settings_watch import SettingsWatcher
@@ -104,7 +105,16 @@ def build_lead_services(app: Application, config: Config, repo: PostgresReposito
         "attiva" if analysis else "spenta (manca ANTHROPIC_API_KEY)",
         config.claude_model,
     )
-    return {"http": http, "anthropic": anthropic_client, "analysis": analysis, "messages": messages, "rounds": rounds}
+    pasted = None
+    if analysis is not None:
+        pasted = PastedListingService(
+            repo, places, analysis.ai, search_price_usd_per_1000=config.google_search_usd_per_1000,
+            eur_per_usd=config.eur_per_usd,
+        )
+    return {
+        "http": http, "anthropic": anthropic_client, "analysis": analysis, "messages": messages, "rounds": rounds,
+        "pasted": pasted,
+    }
 
 
 def build_application(config: Config) -> Application:

@@ -27,7 +27,7 @@ import httpx
 from app.ai.client import AIError, BudgetExceeded, month_start
 from app.db.repository import Repository
 from app.domain.dedupe import Candidate, fingerprints, is_mobile, normalize_email
-from app.domain.models import LeadFinder, Property
+from app.domain.models import LeadFinder, Property, short_term_proof
 from app.domain.shifts import on_shift
 from app.integrations.google_places import MAX_PAGES, FoundPlace, PlacesClient, PlacesError
 from app.integrations.website import check_website
@@ -168,8 +168,8 @@ def wants_details(prop: Property) -> bool:
 
 
 def contactable(prop: Property, mode: str) -> bool:
-    """Per ora le schede partono solo per chi ha un cellulare (WhatsApp), in ogni modalità."""
-    return is_mobile(prop.phone_normalized)
+    """Schede solo per chi ha un cellulare (WhatsApp) e affitta davvero sulle piattaforme (annunci o CIN)."""
+    return is_mobile(prop.phone_normalized) and bool(short_term_proof(prop.cin, prop.listing_urls))
 
 
 class RoundService:

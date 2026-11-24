@@ -9,7 +9,7 @@ from urllib.parse import quote
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.domain.dedupe import is_mobile
-from app.domain.models import Property
+from app.domain.models import PLATFORM_NAMES, Property, short_term_proof
 
 THEME_LABELS = {
     "pulizia": "pulizia",
@@ -62,10 +62,16 @@ def card_text(prop: Property, mode: str, assignee: str | None = None, status_not
         contacts.append(f"✉️ {e(prop.email)}")
     if prop.website:
         contacts.append(f'🌐 <a href="{e(prop.website)}">sito</a>')
+    for key, label in PLATFORM_NAMES.items():
+        if prop.listing_urls.get(key):
+            contacts.append(f'<a href="{e(prop.listing_urls[key])}">{label}</a>')
     if prop.listing_urls.get("google_maps"):
         contacts.append(f'<a href="{e(prop.listing_urls["google_maps"])}">Google Maps</a>')
     if contacts:
         lines.append(" · ".join(contacts))
+    proof = short_term_proof(prop.cin, prop.listing_urls)
+    if proof:
+        lines.append("🏷 Affitto breve: " + e(", ".join(proof)) + (f" ({e(prop.cin)})" if prop.cin else ""))
 
     lines += ["", f"<b>Punteggio {e(prop.score if prop.score is not None else '—')}/100</b>"]
     lines += [e(reason) for reason in prop.score_reasons[:5]]

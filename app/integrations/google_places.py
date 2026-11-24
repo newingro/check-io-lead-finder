@@ -225,6 +225,11 @@ class PlacesClient:
             body = {**body, "pageToken": token}
         return SearchResult(places, pages)
 
+    async def find(self, query: str) -> SearchResult:
+        """Cerca una struttura per nome e località in tutta Italia: una sola richiesta (fino a 5 risultati)."""
+        data = await self._post({"textQuery": query, "languageCode": "it", "regionCode": "IT", "pageSize": 5})
+        return SearchResult([parse_place(p) for p in data.get("places") or []], 1)
+
     async def details(self, place_id: str) -> FoundPlace:
         """Dettagli di una scheda (con le recensioni): una richiesta pagata."""
         response = await self._http.get(

@@ -17,11 +17,11 @@ from app.db.repository import Repository
 from app.domain.dedupe import listing_fingerprints
 from app.domain.models import LeadFinder, Property
 from app.domain.shifts import day_code
-from app.integrations.google_places import platform_of
 from app.integrations.website import _CIN
 from app.services.analysis import AnalysisService
 from app.services.keycheck import check_anthropic, check_google, format_statuses, google_mode
 from app.services.messages import MessageService
+from app.services.pasted import PastedListingService
 from app.services.rounds import DetailsTest, RoundService
 
 from . import cards
@@ -164,8 +164,9 @@ async def cerca(update: Update, context: ContextTypes.DEFAULT_TYPE, member: Lead
 
 # ── /analizza ────────────────────────────────────────────────
 ANALIZZA_USAGE = (
-    "Incolla il link dell'annuncio e, sotto, il testo dell'annuncio o delle recensioni (copia e incolla dalla pagina). "
-    "Il bot non apre Booking, Airbnb o Trivago: lavora solo su quello che incolli.\n\n"
+    "Incolla il link dell'annuncio (Booking, Airbnb, Trivago…) e, sotto, il testo dell'annuncio con nome e località, "
+    "più le recensioni se vuoi (copia e incolla dalla pagina). Il bot non apre i portali: lavora solo su quello che "
+    "incolli, poi cerca la struttura e il suo cellulare nei dati pubblici.\n\n"
     "Esempio:\n/analizza https://www.booking.com/hotel/it/esempio.html\nTesto dell'annuncio e recensioni…"
 )
 
@@ -174,7 +175,7 @@ async def analizza(update: Update, context: ContextTypes.DEFAULT_TYPE, member: L
     message = update.effective_message
     data = deps(context)
     analysis: AnalysisService | None = data.get("analysis")
-    if analysis is None:
+    if analysis is None or data.get("pasted") is None:
         await message.reply_text("Analisi AI non attiva: manca ANTHROPIC_API_KEY sul server.")
         return
     raw = (message.text or "").split(maxsplit=1)
@@ -187,32 +188,34 @@ async def analizza(update: Update, context: ContextTypes.DEFAULT_TYPE, member: L
         return
     cin_match = _CIN.search(text)
     cin = re.sub(r"\s", "", cin_match.group(0)).upper() if cin_match else None
-    portal = platform_of(link) or "annuncio"
     prints = listing_fingerprints(link, cin)
     repo: Repository = data["repo"]
-    if prints:
-        property_id = await repo.insert_manual_property(
-            f"Annuncio {portal}", {portal: link} if link else {}, prints, cin, member.id
-        )
-        if property_id is None:
-            await message.reply_text("Questa struttura è già in memoria (stesso link o stesso CIN): non la ripropongo.")
-            return
-    else:
-        property_id = await repo.insert_manual_property(f"Annuncio {portal}", {}, [], None, member.id)
-    await message.reply_text("🧠 Analisi in corso: ti mando la scheda tra poco.")
-    context.application.create_task(_run_pasted(context, member, property_id, text, link))
+    if prints and await repo.find_fingerprints(prints):
+        await message.reply_text("Questa struttura è già in memoria (stesso link o stesso CIN): non la ripropongo.")
+        return
+    await message.reply_text(
+        "🔎 Cerco la struttura e il suo cellulare nei dati pubblici, poi la analizzo: ti mando la scheda tra poco."
+    )
+    context.application.create_task(_run_pasted(context, member, text, link, cin, prints))
 
 
 async def _run_pasted(
-    context: ContextTypes.DEFAULT_TYPE, member: LeadFinder, property_id: str, text: str, link: str | None
+    context: ContextTypes.DEFAULT_TYPE, member: LeadFinder, text: str, link: str | None, cin: str | None,
+    prints: list[tuple[str, str]],
 ) -> None:
     data = deps(context)
     repo: Repository = data["repo"]
     analysis: AnalysisService = data["analysis"]
     messages: MessageService | None = data.get("messages")
+    pasted: PastedListingService = data["pasted"]
     chat_id = member.telegram_chat_id
     try:
-        prop = await repo.get_property(property_id)
+        located = await pasted.locate(text, link, cin, prints)
+        if located.outcome != "trovata" or located.property_id is None:
+            await context.bot.send_message(chat_id, ("ℹ️ " if located.outcome == "gia_in_memoria" else "❌ ") + located.message)
+            return
+        prop = await repo.get_property(located.property_id)
+        # telefono e affitto breve già controllati: l'annuncio incollato è la prova
         prop = await analysis.analyze(prop, [], pasted_text=text, pasted_link=link, require_contacts=False)
         if prop.status == "analizzato" and messages is not None:
             await messages.write(prop, member.name)

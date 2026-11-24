@@ -75,6 +75,17 @@ STATUSES = (
     "nuovo", "analizzato", "proposto", "approvato", "scartato", "contattato", "followup",
     "richiamare", "risposto", "trattativa", "cliente", "perso", "errore",
 )
+PLATFORM_NAMES = {"booking": "Booking", "airbnb": "Airbnb", "vrbo": "Vrbo", "trivago": "Trivago", "expedia": "Expedia"}
+
+
+def short_term_proof(cin: str | None, listing_urls: dict[str, str] | None) -> list[str]:
+    """Prove che è un affitto breve vero: annunci su Booking/Airbnb/… (dal sito o dalla scheda) e CIN."""
+    proof = [PLATFORM_NAMES[k] for k in (listing_urls or {}) if k in PLATFORM_NAMES]
+    if cin:
+        proof.append("CIN")
+    return proof
+
+
 OPEN_STATUSES = ("proposto", "approvato")
 
 

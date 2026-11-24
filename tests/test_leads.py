@@ -39,8 +39,13 @@ ALL_DAY = {d: [["00:00", "23:59"]] for d in ["lun", "mar", "mer", "gio", "ven", 
 
 
 # ── Dati finti ───────────────────────────────────────────────
+AIRBNB = "airbnb"
+
+
 def google_place(pid: str, name: str, phone: str | None = "+39 333 123 4567", primary: str = "bed_and_breakfast",
-                 status: str = "OPERATIONAL", website: str | None = None) -> dict[str, Any]:
+                 status: str = "OPERATIONAL", website: str | None = AIRBNB) -> dict[str, Any]:
+    if website == AIRBNB:  # di base la scheda rimanda all'annuncio Airbnb: affitto breve vero
+        website = f"https://www.airbnb.it/rooms/{pid}"
     return {
         "id": pid,
         "displayName": {"text": name},
@@ -129,8 +134,10 @@ def good_messages() -> dict[str, Any]:
 class FakeAnthropic:
     """Finto client Claude: risponde secondo lo schema richiesto e registra le richieste."""
 
-    def __init__(self, analysis: dict | None = None, messages: list[dict] | None = None, stop_reason: str = "end_turn"):
+    def __init__(self, analysis: dict | None = None, messages: list[dict] | None = None, stop_reason: str = "end_turn",
+                 extraction: dict | None = None):
         self.analysis = analysis or analysis_data()
+        self.extraction = extraction or {"nome": "Baita", "comune": "Abetone", "indirizzo": "", "provincia": "PT"}
         self.messages_queue = list(messages or [])
         self.stop_reason = stop_reason
         self.requests: list[dict[str, Any]] = []
@@ -141,6 +148,8 @@ class FakeAnthropic:
         schema = kwargs["output_config"]["format"]["schema"]
         if "segnali_opportunita" in schema["properties"]:
             data = self.analysis
+        elif "comune" in schema["properties"]:
+            data = self.extraction
         else:
             data = self.messages_queue.pop(0) if self.messages_queue else good_messages()
         return SimpleNamespace(
@@ -166,6 +175,12 @@ class FakePlaces:
         if self.fail:
             raise PlacesError("Google ha risposto 403: API key not valid")
         return SearchResult([parse_place(p) for p in self.places], min(self.pages, max_pages))
+
+    async def find(self, query: str) -> SearchResult:
+        self.calls.append((query, ()))
+        if self.fail:
+            raise PlacesError("Google ha risposto 403: API key not valid")
+        return SearchResult([parse_place(p) for p in self.places], 1)
 
     async def details(self, place_id: str):
         self.details_calls += 1
@@ -372,7 +387,8 @@ async def _new_property(repo, phone="+39 333 123 4567") -> Property:
     from app.domain.dedupe import Candidate, fingerprints
 
     candidate = Candidate(name="Baita", address="Via Baita 1, Abetone", google_place_id="g1", phone=phone,
-                          ratings={"google": {"voto": 4.2, "recensioni": 37}})
+                          ratings={"google": {"voto": 4.2, "recensioni": 37}},
+                          listing_urls={"airbnb": "https://www.airbnb.it/rooms/1"})
     pid = await repo.insert_property(candidate, fingerprints(candidate), cell="980_170", provincia="047",
                                      zone="Pistoia", query="b&b")
     return await repo.get_property(pid)
@@ -507,10 +523,14 @@ def test_turni_e_canali():
     assert not on_shift({"mar": [["09:00", "17:00"]]}, monday_10)
     # per ora solo cellulari italiani (WhatsApp), in ogni modalità
     only_email = Property(id="x", name="X", phone_normalized=None, email_normalized="a@b.it")
-    landline = Property(id="y", name="Y", phone_normalized="+39055284528")
-    mobile = Property(id="z", name="Z", phone_normalized="+393331234567")
+    landline = Property(id="y", name="Y", phone_normalized="+39055284528", cin="IT048017C2ABCDEFGH")
+    mobile = Property(id="z", name="Z", phone_normalized="+393331234567", listing_urls={"airbnb": "https://airbnb.it/r/1"})
+    mobile_cin = Property(id="w", name="W", phone_normalized="+393331234567", cin="IT048017C2ABCDEFGH")
+    not_rental = Property(id="v", name="V", phone_normalized="+393331234567",
+                          listing_urls={"google_maps": "https://maps.google.com/?cid=1"})
     for mode in ("messaggi", "telefonate", "misto"):
-        assert not contactable(only_email, mode) and not contactable(landline, mode) and contactable(mobile, mode)
+        assert not contactable(only_email, mode) and not contactable(landline, mode)
+        assert contactable(mobile, mode) and contactable(mobile_cin, mode) and not contactable(not_rental, mode)
 
 
 # ── Scheda Telegram ──────────────────────────────────────────
@@ -691,6 +711,7 @@ async def test_analizza_chiede_il_testo_se_manca():
     owner = await world.repo.create_member(SENDER, "titolare", ALL_DAY)
     await world.repo.link_member_directly(owner.id, 1001, 1001, "matteo")
     world.app.bot_data["analysis"] = object()
+    world.app.bot_data["pasted"] = object()
     message = FakeMessage()
     message.text = "/analizza https://www.booking.com/hotel/it/x.html"
     update = SimpleNamespace(
@@ -699,7 +720,7 @@ async def test_analizza_chiede_il_testo_se_manca():
         effective_message=message,
     )
     await handlers.analizza(update, SimpleNamespace(application=world.app, bot=world.bot, args=[]))
-    assert "non apre Booking" in message.replies[0] and world.repo.properties == {}
+    assert "non apre i portali" in message.replies[0] and world.repo.properties == {}
 
 
 def test_configurazione_chiavi_facoltative():
@@ -996,7 +1017,8 @@ async def _analyzed_without_reviews(repo, n: int = 1) -> list[str]:
     ids = []
     for i in range(n):
         candidate = Candidate(name=f"Baita {i}", address=f"Via Baita {i}, Abetone", google_place_id=f"g{i + 1}",
-                              phone=f"+39 333 123 456{i}", ratings={"google": {"voto": 4.2, "recensioni": 37}})
+                              phone=f"+39 333 123 456{i}", ratings={"google": {"voto": 4.2, "recensioni": 37}},
+                              listing_urls={"booking": f"https://www.booking.com/hotel/it/baita-{i}.html"})
         pid = await repo.insert_property(candidate, fingerprints(candidate), cell="980_170", provincia="047",
                                          zone="Pistoia", query="b&b")
         prop = await repo.get_property(pid)
@@ -1156,3 +1178,131 @@ async def test_analisi_scartata_senza_cellulare_senza_spendere():
     assert result.status == "scartato" and result.discard_reason == "senza_cellulare" and fake.requests == []
     card = cards.card_text(_card_property(), "messaggi")
     assert "📱 +39 333 123 4567" in card
+
+
+
+async def test_analisi_scartata_senza_affitto_breve_senza_spendere():
+    from app.domain.dedupe import Candidate, fingerprints
+
+    repo, _ = await make_repo()
+    fake = FakeAnthropic()
+    ai = ClaudeJSON(repo, fake, model="claude-opus-5-5", effort="medium", eur_per_usd=Decimal(1), clock=lambda: NOW)
+    candidate = Candidate(name="Casa Sole", address="Via Sole 1", google_place_id="gx", phone="+39 333 765 4321",
+                          listing_urls={"google_maps": "https://maps.google.com/?cid=9"})
+    pid = await repo.insert_property(candidate, fingerprints(candidate), cell="980_170", provincia="047",
+                                     zone="Pistoia", query="b&b")
+    result = await AnalysisService(repo, ai).analyze(await repo.get_property(pid), [])
+    assert result.status == "scartato" and result.discard_reason == "senza_affitto_breve" and fake.requests == []
+
+
+def test_scheda_mostra_piattaforme_e_cin():
+    prop = _card_property()
+    prop = Property(**{**prop.__dict__, "cin": "IT048017C2ABCDEFGH",
+                       "listing_urls": {**prop.listing_urls, "booking": "https://www.booking.com/hotel/it/baita.html"}})
+    text = cards.card_text(prop, "messaggi")
+    assert '<a href="https://www.booking.com/hotel/it/baita.html">Booking</a>' in text
+    assert "🏷 Affitto breve: Booking, CIN (IT048017C2ABCDEFGH)" in text
+
+
+
+# ── Annuncio incollato da Booking/Airbnb: cellulare dai dati pubblici ──
+LISTING_TEXT = (
+    "Baita Abetone - Appartamento con vista. Via del Brennero 12, 51024 Abetone (PT). "
+    "Due camere, cucina, wifi. Self check-in. CIN IT047023C2ABCDEFGH. " * 2
+)
+
+
+def _pasted_service(repo, places, fake=None):
+    from app.services.pasted import PastedListingService
+
+    ai = ClaudeJSON(repo, fake or FakeAnthropic(), model="claude-opus-5-5", effort="medium", eur_per_usd=Decimal(1),
+                    clock=lambda: NOW)
+    return PastedListingService(repo, places, ai, search_price_usd_per_1000=None, eur_per_usd=Decimal(1),
+                                clock=lambda: NOW)
+
+
+def test_somiglianza_dei_nomi():
+    from app.services.pasted import best_match, name_similarity
+
+    assert name_similarity("Baita Abetone - Appartamento", "Baita") >= 0.75
+    assert name_similarity("Casa Sole", "Appartamento Sole Firenze", "Firenze") >= 0.75
+    assert name_similarity("Appartamento Firenze", "Firenze Suite", "Firenze") < 0.5  # solo il comune in comune
+    found = [parse_place(google_place("g9", "Hotel Baita", primary="hotel")), parse_place(google_place("g1", "Baita"))]
+    assert best_match(found, "Baita", "Abetone").candidate.google_place_id == "g1"  # l'hotel è escluso
+    assert best_match(found, "Villa Rosa", "Abetone") is None
+
+
+async def test_annuncio_incollato_trovato_con_cellulare():
+    from app.domain.dedupe import listing_fingerprints
+
+    repo, _ = await make_repo(google_monthly_requests=1400)
+    place = google_place("g1", "Baita", website=None)
+    places = FakePlaces([place])
+    link = "https://www.booking.com/hotel/it/baita-abetone.html"
+    prints = listing_fingerprints(link, "IT047023C2ABCDEFGH")
+    located = await _pasted_service(repo, places).locate(LISTING_TEXT, link, "IT047023C2ABCDEFGH", prints)
+    assert located.outcome == "trovata" and places.calls[0][0] == "Baita Abetone"
+    prop = await repo.get_property(located.property_id)
+    assert prop.phone_normalized == "+393331234567" and prop.listing_urls["booking"] == link
+    assert prop.cin == "IT047023C2ABCDEFGH" and prop.zone == "annuncio incollato"
+    run = next(iter(repo.search_runs.values()))
+    assert run["pages"] == 1 and run["query"] == "annuncio: Baita"  # una richiesta, contata nel tetto
+    # di nuovo lo stesso annuncio: già in memoria
+    again = await _pasted_service(repo, places).locate(LISTING_TEXT, link, "IT047023C2ABCDEFGH", prints)
+    assert again.outcome == "gia_in_memoria"
+
+
+@pytest.mark.parametrize(
+    ("phone", "outcome", "words"),
+    [("+39 0573 123456", "senza_cellulare", "solo un numero fisso"), (None, "senza_cellulare", "nessun telefono")],
+)
+async def test_annuncio_incollato_senza_cellulare(phone, outcome, words):
+    repo, _ = await make_repo(google_monthly_requests=1400)
+    places = FakePlaces([google_place("g1", "Baita", phone=phone)])
+    located = await _pasted_service(repo, places).locate(LISTING_TEXT, None, None, [])
+    assert located.outcome == outcome and words in located.message and repo.properties == {}
+    # ricordata: il radar non la riproporrà
+    assert await repo.find_fingerprints([("google", __import__("app.domain.dedupe", fromlist=["_hash"])._hash("google", "g1"))])
+
+
+async def test_annuncio_incollato_non_trovato_e_tetto():
+    repo, _ = await make_repo(google_monthly_requests=1400)
+    places = FakePlaces([google_place("g1", "Villa Rosa")])
+    located = await _pasted_service(repo, places).locate(LISTING_TEXT, None, None, [])
+    assert located.outcome == "non_trovata" and "Non trovo «Baita» a Abetone" in located.message
+
+    full, _ = await make_repo(google_monthly_requests=1)
+    run = await full.start_search_run(zone="", query="casa vacanze", cell="1_1", provincia="047")
+    await full.finish_search_run(run, status="completata", results=0, new=0, known=0, excluded=0, pages=1,
+                                 cost_eur=Decimal(0))
+    fake = FakeAnthropic()
+    blocked = await _pasted_service(full, FakePlaces([]), fake).locate(LISTING_TEXT, None, None, [])
+    assert blocked.outcome == "limite" and fake.requests == []  # nessuna spesa AI se Google è finito
+
+
+async def test_analizza_da_telegram_prepara_la_scheda_con_whatsapp():
+    world = World()
+    owner = await world.repo.create_member(SENDER, "titolare", ALL_DAY)
+    await world.repo.link_member_directly(owner.id, 1001, 1001, "matteo")
+    world.repo.change_settings(google_monthly_requests=1400)
+    fake = FakeAnthropic(analysis=analysis_data(70))
+    ai = ClaudeJSON(world.repo, fake, model="claude-opus-5-5", effort="medium", eur_per_usd=Decimal(1), clock=lambda: NOW)
+    world.app.bot_data["analysis"] = AnalysisService(world.repo, ai)
+    world.app.bot_data["messages"] = MessageService(world.repo, ai)
+    world.app.bot_data["pasted"] = _pasted_service(world.repo, FakePlaces([google_place("g1", "Baita", website=None)]), fake)
+    created: list = []
+    world.app.create_task = lambda coro, name=None: created.append(coro)
+    message = FakeMessage()
+    message.text = "/analizza https://www.airbnb.it/rooms/555\n" + LISTING_TEXT
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1001, username="matteo", first_name="M"),
+        effective_chat=SimpleNamespace(id=1001, type="private"),
+        effective_message=message,
+    )
+    await handlers.analizza(update, SimpleNamespace(application=world.app, bot=world.bot, args=[]))
+    assert "Cerco la struttura e il suo cellulare" in message.replies[0]
+    await created.pop()
+    prop = next(iter(world.repo.properties.values()))
+    assert prop["status"] == "proposto" and prop["listing_urls"]["airbnb"] == "https://www.airbnb.it/rooms/555"
+    card = world.bot.sent[-1][1]
+    assert "📱" in card and "Airbnb" in card and "Messaggio WhatsApp" in card
